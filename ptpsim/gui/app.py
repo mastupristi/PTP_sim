@@ -953,8 +953,9 @@ class MainWindow(QtWidgets.QMainWindow):
                                      labelOpts={"position": 0.9, "color": "#444444"})
                 p.addItem(ln)
                 self.evt_lines.append((p, ln))
-        for t_, kind in r.get("events", [])[-200:]:
-            if kind in ("step", "servo_reset"):
+        marks = [(t_, k) for t_, k in r.get("events", []) if k in ("step", "servo_reset")]
+        for t_, kind in (marks if len(marks) <= 30 else [m for m in marks if m[1] == "step"]):   # a reset every
+            if kind in ("step", "servo_reset"):                                                    # sample is a hatch
                 ln = pg.InfiniteLine(pos=t_, angle=90, pen=pg.mkPen(C_EVT, width=1, style=QtCore.Qt.DotLine))
                 self.p_off.addItem(ln)
                 self.evt_lines.append((self.p_off, ln))
