@@ -18,7 +18,7 @@ CONFIGS = sorted((Path(__file__).parent.parent / "configs").glob("*.json"))
 @pytest.fixture(scope="module")
 def win():
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    w = MainWindow(start_worker=False)
+    w = MainWindow(start_worker=False, lang="en")
     yield w
     w.close()
 
@@ -74,7 +74,7 @@ def test_controller_switch_builds_the_new_parameter_set(win):
 
 def test_default_gui_scenario_is_the_100us_20ppm_one():
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    w = MainWindow(start_worker=False)
+    w = MainWindow(start_worker=False, lang="en")
     c = w.build_config()
     assert c.oscillator.initial_offset_ns == 100_000.0 and c.oscillator.freq_error_ppb == 20_000.0
     w.close()
@@ -90,3 +90,24 @@ def test_live_changes_before_start_trigger_a_reset(win):
     win._debounced()
     assert calls == ["reset"]
     win.mode = "explore"
+
+
+def test_i18n_has_english_and_italian_for_every_string():
+    from ptpsim.gui.i18n import STRINGS, T, set_lang
+    for k, v in STRINGS.items():
+        assert v.get("en") and v.get("it"), k
+    set_lang("it")
+    assert T("tab_run") == "Esecuzione"
+    set_lang("en")
+    assert T("tab_run") == "Run"
+
+
+def test_language_switch_rebuilds_ui_and_keeps_config(win):
+    cfg = SimConfig.load(CONFIGS[0])
+    win._apply_cfg_to_widgets(cfg)
+    win.rows["lat_cmd"].spin.setValue(12.0)
+    before = win.build_config().to_dict()
+    win.lang_combo.setCurrentIndex(win.lang_combo.findData("it"))
+    assert win.tabs.tabText(0) == "Esecuzione" and win.build_config().to_dict() == before
+    win.lang_combo.setCurrentIndex(win.lang_combo.findData("en"))
+    assert win.tabs.tabText(0) == "Run" and win.build_config().to_dict() == before

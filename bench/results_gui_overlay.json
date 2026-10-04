@@ -2,16 +2,16 @@
   "scenario": "overlay",
   "trials": 40,
   "latency_ms": {
-    "median": 171.09651949976978,
-    "p95": 188.7422450017766,
-    "max": 196.2815530023363,
-    "min": 164.4964839979366
+    "median": 187.4289139996108,
+    "p95": 193.7677000023541,
+    "max": 198.0708400005824,
+    "min": 181.00002899882384
   },
-  "worker_compute_ms_median": 70.11636350216577,
-  "sim_ms_median": 31.496273502853,
+  "worker_compute_ms_median": 72.29844650100858,
+  "sim_ms_median": 31.90288499899907,
   "debounce_ms": 40,
-  "gui_thread_max_gap_ms": 97.97649000029196,
-  "gui_thread_p99_gap_ms": 86.93433400185313,
+  "gui_thread_max_gap_ms": 121.81505700209527,
+  "gui_thread_p99_gap_ms": 115.24984199786559,
   "machine": {
     "python": "3.14.4",
     "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.43",

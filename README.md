@@ -23,11 +23,11 @@ Grandmaster.
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e '.[gui,test]'          # numpy; GUI: PySide6 + pyqtgraph; tests: pytest
-ptpsim-gui                            # interactive GUI   (or: python -m ptpsim.gui.app [scenario.json])
+ptpsim-gui [scenario.json] [--lang en|it]   # interactive GUI (English default, Italian available)
 ptpsim-run run --config configs/default_deterministic.json --out results/run   # headless + CSV
 ptpsim-run run --preset noisy --set intervals.sync_log=-3 --set seed=5 --out results/run_noisy
 ptpsim-run compare --out results      # baseline vs variant, writes results/comparison.{csv,md}
-pytest                                # 106 tests (the C-reference tests need gcc, the GUI tests Qt)
+pytest                                # 112 tests (the C-reference tests need gcc, the GUI tests Qt)
 python bench/benchmark.py             # engine benchmark   (bench/gui_latency.py: GUI reactivity)
 ```
 
@@ -51,6 +51,7 @@ Headless GUI check: `QT_QPA_PLATFORM=offscreen python bench/gui_latency.py`.
 | `bench/` | benchmarks and their recorded results |
 | `docs/firmware_reconstruction.md` | **phase 1**: verified reconstruction of the firmware loop, with file/function/commit |
 | `docs/model.md` | model, jitter analysis, approximations, NXP table, validation matrix |
+| `docs/manual.en.md`, `docs/manual.it.md` | **user manual** (English / Italiano): every GUI parameter, its unit, what it does, metrics, JSON reference |
 
 ## What is modelled
 
@@ -123,8 +124,9 @@ Findings (model predictions, with the evidence in the tests/results):
 3. **At Sync ≥ 2 s the baseline diverges in the model** (Delay_Req 2 s): the ideal loop's poles are stable, but with the
    firmware's delay estimator the loop is not (`test_baseline_instability_at_long_sync_comes_from_delay_estimate_coupling`:
    stable with exact delay, resets forever with the estimated one). A hypothesis to check on hardware.
-4. **Large initial offsets:** the PI is not clamped, so an offset above ≈ 71 ms asks for > 50 000 ppm and the NXP
-   driver rejects it → `clock_servo_reset()` loop (the 100 ms outlier rule only applies after lock).
+4. **Large initial offsets:** between ≈ 71 ms and 1 s the PI is not clamped, so it asks for > 50 000 ppm and the NXP
+   driver rejects it → `clock_servo_reset()` loop (the 100 ms outlier rule only applies after lock); beyond 1 s the
+   forced alignment (`clock_step`) takes over.
 5. **24 MHz clock root (INC = 41):** the reachable average rates near ratio 1.0 are ≈ 63 ppm apart (table in
    [docs/model.md](docs/model.md)), so any oscillator error is realised by dithering between the nominal pair and a
    neighbour 63 ppm away. In the model the median |offset| at 24 MHz exceeds the 236 ns reported on hardware in the
@@ -135,14 +137,22 @@ Findings (model predictions, with the evidence in the tests/results):
 
 ## GUI
 
-Two grafici sharing the time axis (**Delay**: firmware estimate held between samples, with sample markers, and the
-physical delay reference; **Offset**: estimated, real, optional baseline overlay), units ns/µs/ms, zoom/pan,
-legends, diagnostic rate panel, metrics table. Controls (spin + slider): Kp/Ki (or the variant's parameters),
-controller selection, Sync and Delay_Req exponents (with the resulting interval shown), independent / every-N mode,
-initial offset and frequency error, duration, seed, network delay/asymmetry/jitter, latencies, timestamp noise,
-loss, actuator and clock root.
+User manual, every parameter explained: **[English](docs/manual.en.md) · [Italiano](docs/manual.it.md)**.
+Interface language: English (default) or Italian (selector top right, `--lang en|it`; remembered).
 
-* **Esplorazione:** any change recomputes the whole trajectory from the same initial conditions and seed.
+Controls are grouped in **tabs** (Run, Controller, PTP intervals, Scenario, Network and noise, Actuator); the right side is
+the toolbar, three plots sharing the time axis (**Delay**: firmware estimate held between samples with sample markers and the
+physical reference; **Offset**: estimated, true, optional baseline overlay; optional **rate diagnostics**), which take all the
+available height, and the metrics table, always fully visible. Units ns/µs/ms, zoom/pan, legends.
+
+* **Metrics table:** transient end (settling), overshoot, peak, and the **steady-state statistics — median, min, max,
+  median |x|, RMS, mean** — for the true and the estimated offset (and the baseline), the delay estimate's median/min/max,
+  saturation counters, timing.
+* **Transient end** is also drawn as a dashed vertical line on the plots, and a **View** selector switches between the full
+  run, the transient and the steady state (the y axis follows the visible data).
+* **Initial offset up to ±2×10⁹ s** with a *"Slave PHC starts at 0"* button: offsets beyond 1 s trigger the firmware's
+  forced alignment (`clock_step`, see below), reproduced with exact integer arithmetic.
+* **Exploration:** any change recomputes the whole trajectory from the same initial conditions and seed.
 * **Live:** the trajectory continues; new parameters apply from the current instant (dashed marker on the plots);
   explicit integrator policy on gain changes (*keep / reset / bumpless*), start/pause/reset and playback speed
   (the speed only changes how much simulated time is requested per tick, never the maths).
@@ -151,11 +161,21 @@ loss, actuator and clock root.
   widgets updated only in the GUI thread, bounded live buffers, rendering down-sampling only
   (`pyqtgraph` peak-mode) — metrics use the full data.
 * Measured reactivity (offscreen Qt, software rendering, 300 s scenario, **from the parameter change to the end of the
-  repaint**, 40 trials): default deterministic **median 124 ms, p95 144 ms**; NXP actuator 171 / 179 ms; baseline overlay
-  171 / 189 ms ([`bench/results_gui_*.json`](bench)). The engine alone takes 29 ms (ideal) / 76 ms (NXP) for 300 s
+  repaint**, 40 trials): default deterministic **median 135 ms, p95 159 ms**; NXP actuator 187 / 195 ms; baseline overlay
+  187 / 194 ms ([`bench/results_gui_*.json`](bench)). The engine alone takes 29 ms (ideal) / 77 ms (NXP) for 300 s
   ([`bench/results_engine.json`](bench/results_engine.json)); no JIT was needed. The *calculation* never blocks the GUI
-  (separate process), but each redraw occupies the GUI thread for ≈ 80 ms (p99 of a 5 ms heartbeat gap, mostly pyqtgraph
-  axis/grid painting). A real display may differ from the offscreen figures.
+  (separate process), but each redraw occupies the GUI thread for ≈ 85–115 ms (p99 of a 5 ms heartbeat gap, mostly
+  pyqtgraph axis/grid painting). A real display may differ from the offscreen figures.
+
+### Forced alignment of a far-away clock
+
+The only forced phase alignment in the firmware is `clock_step()` (`subsys/net/lib/ptp/clock.c`): when
+`|offset| > 1 s` it sets the PHC to `phc_now − offset` (`precision_clock_set` → `ENET_Ptp1588SetTimer`), clears the stored
+`t1/t2` and the delay estimate and resets the servo; the PI restarts after the next Delay_Resp. The simulator reproduces
+exactly that (also the first-delay requirement, so the step happens only after the first Delay_Resp) and adds an optional
+read→set latency (`latency.step_ns`). A PHC that boots at 0 against a 1.7×10¹⁸ ns epoch is a supported scenario: the true
+offset is carried as an exact integer while huge, so the residual after the step is ns-accurate
+(`tests/test_engine.py::test_phc_starting_at_zero_is_aligned_by_a_step_with_ns_accuracy`).
 
 ## Metrics (definitions)
 

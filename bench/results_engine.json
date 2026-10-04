@@ -5,55 +5,55 @@
     "processor": "x86_64",
     "numpy": "2.5.3"
   },
-  "repeat": 15,
+  "repeat": 10,
   "cases": {
     "300 s deterministic, ideal (default)": {
-      "sim_median_ms": 29.041588000836782,
-      "sim_min_ms": 28.664951998507604,
-      "sim_p95_ms": 33.17708300164668,
-      "metrics_median_ms": 1.9668429995363113,
+      "sim_median_ms": 29.499286500140443,
+      "sim_min_ms": 28.51367100083735,
+      "sim_p95_ms": 35.518269000021974,
+      "metrics_median_ms": 2.8408354992279783,
       "events": 6592,
-      "events_per_s": 226984.832916508
+      "events_per_s": 223463.0318929448
     },
     "300 s deterministic, NXP 100 MHz": {
-      "sim_median_ms": 76.32162300069467,
-      "sim_min_ms": 75.55000700085657,
-      "sim_p95_ms": 88.94119599790429,
-      "metrics_median_ms": 1.2372269993647933,
+      "sim_median_ms": 77.42224200046621,
+      "sim_min_ms": 76.7610680013604,
+      "sim_p95_ms": 79.71461000124691,
+      "metrics_median_ms": 2.8522465017886134,
       "events": 6592,
-      "events_per_s": 86371.32886888426
+      "events_per_s": 85143.49145249894
     },
     "300 s deterministic, NXP 24 MHz": {
-      "sim_median_ms": 79.97081600115052,
-      "sim_min_ms": 79.04296799824806,
-      "sim_p95_ms": 98.05491299994173,
-      "metrics_median_ms": 1.5388319989142474,
+      "sim_median_ms": 81.01375800106325,
+      "sim_min_ms": 79.97405599962804,
+      "sim_p95_ms": 92.54653199968743,
+      "metrics_median_ms": 2.236679001725861,
       "events": 6592,
-      "events_per_s": 82430.07048852874
+      "events_per_s": 81368.89539074937
     },
     "300 s noisy (jitter+net+ts noise), ideal": {
-      "sim_median_ms": 43.974783999146894,
-      "sim_min_ms": 43.82680699927732,
-      "sim_p95_ms": 56.40051499722176,
-      "metrics_median_ms": 1.5513250000367407,
+      "sim_median_ms": 44.59541399955924,
+      "sim_min_ms": 43.15172499991604,
+      "sim_p95_ms": 57.874398000421934,
+      "metrics_median_ms": 2.3900860014691716,
       "events": 6591,
-      "events_per_s": 149881.35018759535
+      "events_per_s": 147795.4661451319
     },
     "300 s deterministic, Sync 2^-4 (16 Hz)": {
-      "sim_median_ms": 106.73930700068013,
-      "sim_min_ms": 105.82728900044458,
-      "sim_p95_ms": 112.48370499743032,
-      "metrics_median_ms": 2.7556710010685492,
+      "sim_median_ms": 108.22534500039183,
+      "sim_min_ms": 105.82452899689088,
+      "sim_p95_ms": 114.52355100118439,
+      "metrics_median_ms": 4.96984299752512,
       "events": 24592,
-      "events_per_s": 230393.101576379
+      "events_per_s": 227229.58286629594
     },
     "3600 s deterministic, ideal": {
-      "sim_median_ms": 350.04255499734427,
-      "sim_min_ms": 342.01837799992063,
-      "sim_p95_ms": 380.97139800083824,
-      "metrics_median_ms": 26.558096000371734,
+      "sim_median_ms": 353.41804800009413,
+      "sim_min_ms": 348.14716199980467,
+      "sim_p95_ms": 361.55149600017467,
+      "metrics_median_ms": 35.63762249905267,
       "events": 79192,
-      "events_per_s": 226235.35015792813
+      "events_per_s": 224074.5781041123
     }
   }
 }

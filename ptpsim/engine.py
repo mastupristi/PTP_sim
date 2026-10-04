@@ -225,7 +225,7 @@ class Simulation:
         return self.E + x // PS_PER_NS
 
     def _phc_read_ns(self, t_ps: int) -> int:
-        return self.E + (t_ps + _ps(self.clock.phi_ns(t_ps))) // PS_PER_NS
+        return self.E + self.clock.read_ps(t_ps) // PS_PER_NS
 
     # ------------------------------------------------------------------ network helpers
     def _net_ps(self, direction: str, stream: str, idx: int) -> int:
@@ -399,7 +399,10 @@ class Simulation:
         self._record_sample(t_arr, offset, float("nan"), 1)
         self.counters["steps"] += 1
         self._log("step", f"offset={offset} ns")
-        self.clock.step(self.now, -float(offset))
+        self.clock.step(self.now, -int(offset))                 # exact: cancels a huge offset to the ns
+        lat = self.cfg.latency.step_ns
+        if lat:
+            self.clock.step(self.now, -float(lat))              # target was read `lat` before the set took effect
         self.fw_t1 = self.fw_t2 = 0           # memset(&ptp_clk.timestamp, 0)
         self.fw_mean_delay = 0
         self._servo_reset("step")

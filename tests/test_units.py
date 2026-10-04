@@ -225,3 +225,20 @@ def test_config_roundtrip_and_overrides(tmp_path):
         cfg.with_overrides(**{"intervals.nope": 1})
     with pytest.raises(KeyError):
         SimConfig.from_dict({"bogus": 1})
+
+
+def test_steady_state_statistics_and_transient_end():
+    cfg = quiet_cfg()
+    cfg.duration_s = 200.0
+    cfg.oscillator.initial_offset_ns = 100_000.0
+    cfg.oscillator.freq_error_ppb = 20_000.0
+    r = simulate(cfg)
+    m = compute_metrics(r, MetricsConfig(final_window_s=50.0))
+    t = m["true_offset"]
+    for k in ("median_ns", "min_ns", "max_ns", "median_abs_ns", "p2p_ns", "max_abs_ns"):
+        assert np.isfinite(t[k])
+    assert t["min_ns"] <= t["median_ns"] <= t["max_ns"] and t["p2p_ns"] == pytest.approx(t["max_ns"] - t["min_ns"])
+    assert m["transient_end_s"] == t["settling_s"] and t["steady_start_s"] == pytest.approx(150.0)
+    assert m["delay"]["n"] > 10 and abs(m["delay"]["median_ns"] - 1000.0) < 2.0
+    m2 = compute_metrics(r, MetricsConfig(final_window_s=50.0, steady_from_settling=True))
+    assert m2["steady_start_s"] == pytest.approx(t["settling_s"])

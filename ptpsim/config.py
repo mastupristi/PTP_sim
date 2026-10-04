@@ -59,6 +59,7 @@ class LatencyConfig:
     rx_processing_ns: float = 50_000.0   # slave: frame arrival -> message processed by the PTP thread
     command_ns: float = 0.0              # slave: servo processing -> new rate effective in hardware
     tx_timestamp_cb_ns: float = 0.0      # slave: Delay_Req TX -> TX timestamp callback
+    step_ns: float = 0.0                 # slave: PHC read -> PHC set inside clock_step (residual error after a step)
 
 
 @dataclass

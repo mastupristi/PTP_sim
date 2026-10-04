@@ -565,3 +565,49 @@ def test_live_drift_change_does_not_double_the_drift():
     assert np.allclose(a.true_offset_ns(t), b.true_offset_ns(t), rtol=1e-6)
     # drift 10 ppb/s for 100 s: eps(t) = 10 t ppb -> phi = 5 t^2 ns (1 s steps)
     assert b.true_offset_ns(np.array([99.0]))[0] == pytest.approx(5 * 99.0 ** 2, rel=0.02)
+
+
+# --------------------------------------------------------- huge initial offsets / forced alignment
+
+def test_phc_starting_at_zero_is_aligned_by_a_step_with_ns_accuracy():
+    """Real PHCs start at ~0 while the GM is at the 1.7e18 ns epoch: clock_step must cancel that exactly."""
+    cfg = quiet_cfg()
+    cfg.duration_s = 120.0
+    cfg.oscillator.initial_offset_ns = -float(cfg.epoch_ns)
+    cfg.oscillator.freq_error_ppb = 20_000.0
+    r = simulate(cfg)
+    assert r.counters["steps"] == 1
+    t = np.linspace(0, 120, 12001)
+    x = r.true_offset_ns(t)
+    assert abs(x[0]) > 1e18 and np.all(np.isfinite(x))
+    assert np.max(np.abs(x[t > 60])) < 50.0 and abs(x[-1]) < 5.0
+    # the servo only restarts after the step *and* a new Delay_Resp (mean_delay was cleared)
+    step_t = [e[0] for e in r.events if e[1] == "step"][0]
+    first_pi = r.servo_t_proc_s[r.servo_action == 0][0]
+    assert first_pi > step_t
+    m = __import__("ptpsim.metrics", fromlist=["x"]).compute_metrics(r)
+    assert not m["true_offset"]["diverged"] and m["servo_start_s"] > step_t
+
+
+def test_step_residual_is_exact_for_integer_offsets_and_includes_the_set_latency():
+    cfg = quiet_cfg()
+    cfg.duration_s = 40.0
+    cfg.oscillator.initial_offset_ns = 3.0e9 + 123.0
+    r = simulate(cfg)
+    first_pi = r.servo_t_proc_s[r.servo_action == 0][0]
+    assert r.counters["steps"] == 1
+    cfg2 = cfg.with_overrides(**{"latency.step_ns": 5000.0})
+    r2 = simulate(cfg2)
+    # same scenario, 5 us read->set latency: the clock is 5 us behind right after the step
+    step_t = [e[0] for e in r2.events if e[1] == "step"][0]
+    assert r2.true_offset_ns(np.array([step_t + 1e-6]))[0] == pytest.approx(-5000.0, abs=1.5)
+    assert abs(r.true_offset_ns(np.array([step_t + 1e-6]))[0]) < 1.5
+
+
+def test_clock_big_offset_arithmetic():
+    from ptpsim.clock import SlaveClock
+    c = SlaveClock(-1.7e18, 20e-6, 0)
+    assert c.read_ps(0) == int(-1.7e18) * 1000
+    c.step(1_000_000_000_000, int(1.7e18) + 7)
+    assert c.phi_ns(1_000_000_000_000) == pytest.approx(7.0 + 20e-6 * 1e9, abs=1e-9)
+    assert c._big[-1] == 0
