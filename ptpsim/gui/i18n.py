@@ -105,9 +105,9 @@ STRINGS: dict[str, dict] = {
     "g_init": _s("Initial conditions / duration", "Condizioni iniziali / durata"),
     "off0": _s("Initial offset", "Offset iniziale"),
     "off0_tip": _s("slave − GM at t = 0, up to ±2e9 s. Beyond 1 s the firmware steps the clock (forced alignment); "
-                   "above ≈71 ms the baseline PI asks > 50000 ppm and the driver rejects it (servo reset).",
+                   "above ≈50 ms the baseline PI asks > 50000 ppm and the driver rejects it (servo reset).",
                    "slave − GM a t = 0, fino a ±2e9 s. Oltre 1 s il firmware fa uno step del clock (riallineamento "
-                   "forzato); oltre ≈71 ms il PI baseline chiede > 50000 ppm e il driver rifiuta (reset del servo)."),
+                   "forzato); oltre ≈50 ms il PI baseline chiede > 50000 ppm e il driver rifiuta (reset del servo)."),
     "btn_phc0": _s("Slave PHC starts at 0 (offset = −epoch)", "PHC slave parte da 0 (offset = −epoch)"),
     "freq0": _s("Frequency error", "Errore di frequenza"),
     "duration": _s("Duration", "Durata"),

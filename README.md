@@ -124,7 +124,7 @@ Findings (model predictions, with the evidence in the tests/results):
 3. **At Sync ≥ 2 s the baseline diverges in the model** (Delay_Req 2 s): the ideal loop's poles are stable, but with the
    firmware's delay estimator the loop is not (`test_baseline_instability_at_long_sync_comes_from_delay_estimate_coupling`:
    stable with exact delay, resets forever with the estimated one). A hypothesis to check on hardware.
-4. **Large initial offsets:** between ≈ 71 ms and 1 s the PI is not clamped, so it asks for > 50 000 ppm and the NXP
+4. **Large initial offsets:** between ≈ 50 ms and 1 s the PI is not clamped: its first output is (kp+ki)·offset, so it asks for > 50 000 ppm and the NXP
    driver rejects it → `clock_servo_reset()` loop (the 100 ms outlier rule only applies after lock); beyond 1 s the
    forced alignment (`clock_step`) takes over.
 5. **24 MHz clock root (INC = 41):** the reachable average rates near ratio 1.0 are ≈ 63 ppm apart (table in

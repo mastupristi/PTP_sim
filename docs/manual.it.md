@@ -140,7 +140,7 @@ n ∈ [−4, 2]: è una scelta della GUI, **non** un limite del protocollo (il f
 ### 3.4 Scheda "Scenario"
 
 * **Offset iniziale** (`oscillator.initial_offset_ns`; mostrato in µs; intervallo ±2×10⁹ s con slider logaritmico): slave − GM a t = 0.
-  * |offset| ≤ 1 s: se ne occupa il PI (oltre ≈ 71 ms la baseline chiede > 50 000 ppm, il driver rifiuta e il servo si azzera in
+  * |offset| ≤ 1 s: se ne occupa il PI (oltre ≈ 50 ms la baseline chiede > 50 000 ppm, il driver rifiuta e il servo si azzera in
     ciclo: una debolezza reale del firmware che il simulatore riproduce).
   * |offset| > 1 s: il firmware esegue un **riallineamento forzato** (`clock_step`): imposta il PHC a *adesso − offset*, cancella i
     timestamp memorizzati e la stima del delay e azzera il servo. Il servo riparte solo dopo una **nuova Delay_Resp** (fino a un

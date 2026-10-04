@@ -142,7 +142,7 @@ n ∈ [−4, 2] — this is a GUI choice, **not** a protocol limit (the firmware
 ### 3.4 Tab "Scenario"
 
 * **Initial offset** (`oscillator.initial_offset_ns`; shown in µs; range ±2×10⁹ s with a log-scale slider): slave − GM at t = 0.
-  * |offset| ≤ 1 s: the PI handles it (above ≈ 71 ms the baseline asks > 50 000 ppm, the driver rejects it and the
+  * |offset| ≤ 1 s: the PI handles it (above ≈ 50 ms the baseline asks > 50 000 ppm, the driver rejects it and the
     servo resets in a loop — a real firmware weakness the simulator reproduces).
   * |offset| > 1 s: the firmware performs a **forced alignment** (`clock_step`): it sets the PHC to *now − offset*,
     clears the stored timestamps and the delay estimate and resets the servo. The servo restarts only after a **new
