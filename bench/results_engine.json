@@ -1,0 +1,59 @@
+{
+  "machine": {
+    "python": "3.14.4",
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.43",
+    "processor": "x86_64",
+    "numpy": "2.5.3"
+  },
+  "repeat": 15,
+  "cases": {
+    "300 s deterministic, ideal (default)": {
+      "sim_median_ms": 29.041588000836782,
+      "sim_min_ms": 28.664951998507604,
+      "sim_p95_ms": 33.17708300164668,
+      "metrics_median_ms": 1.9668429995363113,
+      "events": 6592,
+      "events_per_s": 226984.832916508
+    },
+    "300 s deterministic, NXP 100 MHz": {
+      "sim_median_ms": 76.32162300069467,
+      "sim_min_ms": 75.55000700085657,
+      "sim_p95_ms": 88.94119599790429,
+      "metrics_median_ms": 1.2372269993647933,
+      "events": 6592,
+      "events_per_s": 86371.32886888426
+    },
+    "300 s deterministic, NXP 24 MHz": {
+      "sim_median_ms": 79.97081600115052,
+      "sim_min_ms": 79.04296799824806,
+      "sim_p95_ms": 98.05491299994173,
+      "metrics_median_ms": 1.5388319989142474,
+      "events": 6592,
+      "events_per_s": 82430.07048852874
+    },
+    "300 s noisy (jitter+net+ts noise), ideal": {
+      "sim_median_ms": 43.974783999146894,
+      "sim_min_ms": 43.82680699927732,
+      "sim_p95_ms": 56.40051499722176,
+      "metrics_median_ms": 1.5513250000367407,
+      "events": 6591,
+      "events_per_s": 149881.35018759535
+    },
+    "300 s deterministic, Sync 2^-4 (16 Hz)": {
+      "sim_median_ms": 106.73930700068013,
+      "sim_min_ms": 105.82728900044458,
+      "sim_p95_ms": 112.48370499743032,
+      "metrics_median_ms": 2.7556710010685492,
+      "events": 24592,
+      "events_per_s": 230393.101576379
+    },
+    "3600 s deterministic, ideal": {
+      "sim_median_ms": 350.04255499734427,
+      "sim_min_ms": 342.01837799992063,
+      "sim_p95_ms": 380.97139800083824,
+      "metrics_median_ms": 26.558096000371734,
+      "events": 79192,
+      "events_per_s": 226235.35015792813
+    }
+  }
+}

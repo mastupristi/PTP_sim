@@ -1,0 +1,30 @@
+{
+  "controllers": {
+    "baseline_pi": {
+      "name": "baseline_pi",
+      "params": {
+        "kp": 0.7,
+        "ki": 0.3
+      }
+    },
+    "pi_time_aware": {
+      "name": "pi_time_aware",
+      "params": {
+        "wn": 1.0,
+        "zeta": 1.0,
+        "sat_ppb": 400000.0,
+        "wn_ts_max": 0.35
+      }
+    }
+  },
+  "metrics": {
+    "band_ns": 1000.0,
+    "band_ns_noisy_scenarios": 2000.0,
+    "dwell_s": 10.0,
+    "final_window_s": 60.0
+  },
+  "initial_offset_ns": 100000.0,
+  "freq_error_ppb": 20000.0,
+  "duration_s": 300.0,
+  "noisy_seeds": 10
+}

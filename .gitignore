@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+# local / generated
+results/run*/
+results/live*/
+*.log
+.DS_Store
+# project instructions of the author (not part of the published simulator)
+CLAUDE.md

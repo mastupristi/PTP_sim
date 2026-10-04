@@ -1,0 +1,20 @@
+{
+  "scenario": "nxp",
+  "trials": 40,
+  "latency_ms": {
+    "median": 171.95385249942774,
+    "p95": 178.7905609999143,
+    "max": 193.44495499899494,
+    "min": 168.1833260008716
+  },
+  "worker_compute_ms_median": 83.03856600286963,
+  "sim_ms_median": 77.67363300081342,
+  "debounce_ms": 80,
+  "gui_thread_max_gap_ms": 59.700154000893235,
+  "gui_thread_p99_gap_ms": 50.62108100173646,
+  "machine": {
+    "python": "3.14.4",
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.43",
+    "qt": "6.11.2"
+  }
+}

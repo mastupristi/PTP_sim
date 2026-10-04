@@ -1,0 +1,99 @@
+{
+  "actuator": {
+    "clock_hz": 100000000,
+    "kind": "nxp",
+    "max_ratio_ppm": 50000
+  },
+  "controller": {
+    "name": "baseline_pi",
+    "params": {
+      "ki": 0.3,
+      "kp": 0.7
+    }
+  },
+  "duration_s": 300.0,
+  "epoch_ns": 1700000000000000000,
+  "firmware": {
+    "delay_req_clear_ns": 3000000000,
+    "lock_offset_ns": 10000000,
+    "lock_samples": 3,
+    "outlier_ns": 100000000,
+    "outlier_samples": 2,
+    "step_threshold_ns": 1000000000
+  },
+  "intervals": {
+    "delay_every_n": 8,
+    "delay_log": 1,
+    "delay_mode": "interval",
+    "delay_rearm_from_handling": false,
+    "sync_log": -2
+  },
+  "latency": {
+    "command_ns": 0.0,
+    "delay_resp_ns": 100000.0,
+    "follow_up_ns": 100000.0,
+    "rx_processing_ns": 50000.0,
+    "tx_timestamp_cb_ns": 0.0
+  },
+  "loss": {
+    "delay_req": 0.0,
+    "delay_resp": 0.0,
+    "follow_up": 0.0,
+    "sync": 0.0
+  },
+  "network": {
+    "correction_delay_resp_ns": 0.0,
+    "correction_follow_up_ns": 0.0,
+    "correction_sync_ns": 0.0,
+    "delay_asymmetry_ns": 0.0,
+    "delay_ms_ns": 1000.0,
+    "delay_sm_ns": 1000.0,
+    "jitter_ms": {
+      "clip_sigma": 4.0,
+      "kind": "none",
+      "scale_ns": 0.0
+    },
+    "jitter_sm": {
+      "clip_sigma": 4.0,
+      "kind": "none",
+      "scale_ns": 0.0
+    }
+  },
+  "oscillator": {
+    "drift_ppb_per_s": 0.0,
+    "freq_error_ppb": 20000.0,
+    "initial_offset_ns": 100000.0,
+    "timer_error_ppb": 0.0,
+    "update_period_s": 1.0,
+    "walk_ppb_per_sqrt_s": 0.0
+  },
+  "seed": 1,
+  "timestamps": {
+    "gm_noise_sigma_ns": 0.0,
+    "gm_quantum_ns": 0.0,
+    "slave_noise_sigma_ns": 0.0,
+    "slave_quantum_ns": null
+  },
+  "tx_jitter": {
+    "delay_req": {
+      "clip_sigma": 4.0,
+      "kind": "none",
+      "scale_ns": 0.0
+    },
+    "delay_resp": {
+      "clip_sigma": 4.0,
+      "kind": "none",
+      "scale_ns": 0.0
+    },
+    "follow_up": {
+      "clip_sigma": 4.0,
+      "kind": "none",
+      "scale_ns": 0.0
+    },
+    "sync": {
+      "clip_sigma": 4.0,
+      "kind": "none",
+      "scale_ns": 0.0
+    }
+  }
+}
