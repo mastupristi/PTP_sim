@@ -218,7 +218,7 @@ All metrics use full-resolution data. For the true offset and the estimated offs
 
 ## 5. Recipes
 
-* **Large initial offset**: Scenario → Initial offset 50 ms (the PI is overwhelmed: resets) or 3 s (forced alignment); or press
+* **Large initial offset**: Scenario → Initial offset 100 ms (the PI is overwhelmed: resets) or 3 s (forced alignment); or press
   *Slave PHC starts at 0*. Use View → *Transient*.
 * **Compare controllers**: select `pi_time_aware`, tick *Overlay baseline*; both see the same noise.
 * **Asymmetry bias**: Network → Asymmetry 1000 ns: true offset steady-state median → −500 ns, estimated → 0.

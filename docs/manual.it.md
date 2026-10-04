@@ -213,7 +213,7 @@ Tutte le metriche usano i dati a piena risoluzione. Per l'offset reale e per que
 
 ## 5. Ricette
 
-* **Offset iniziale grande**: Scenario → Offset iniziale 50 ms (il PI è sopraffatto: reset) o 3 s (riallineamento forzato); oppure
+* **Offset iniziale grande**: Scenario → Offset iniziale 100 ms (il PI è sopraffatto: reset) o 3 s (riallineamento forzato); oppure
   *PHC slave parte da 0*. Usa Vista → *Transitorio*.
 * **Confrontare controllori**: scegli `pi_time_aware`, spunta *Sovrapponi baseline*; entrambi vedono lo stesso rumore.
 * **Bias da asimmetria**: Rete → Asimmetria 1000 ns: la mediana a regime dell'offset reale → −500 ns, dello stimato → 0.
