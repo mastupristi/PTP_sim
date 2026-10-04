@@ -23,7 +23,7 @@
   },
   "intervals": {
     "delay_every_n": 8,
-    "delay_log": 3,
+    "delay_log": 2,
     "delay_mode": "interval",
     "delay_rearm_from_handling": false,
     "sync_log": 0

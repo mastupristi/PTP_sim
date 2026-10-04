@@ -27,7 +27,7 @@ ptpsim-gui                            # interactive GUI   (or: python -m ptpsim.
 ptpsim-run run --config configs/default_deterministic.json --out results/run   # headless + CSV
 ptpsim-run run --preset noisy --set intervals.sync_log=-3 --set seed=5 --out results/run_noisy
 ptpsim-run compare --out results      # baseline vs variant, writes results/comparison.{csv,md}
-pytest                                # 84 tests (the C-reference tests need gcc)
+pytest                                # 106 tests (the C-reference tests need gcc, the GUI tests Qt)
 python bench/benchmark.py             # engine benchmark   (bench/gui_latency.py: GUI reactivity)
 ```
 
@@ -86,36 +86,52 @@ has its own PRNG stream indexed by message sequence number: **changing the contr
 ## Results
 
 `ptpsim-run compare` (committed in [`results/comparison.md`](results/comparison.md); 300 s, initial offset 100 µs,
-oscillator +20 ppm, ideal actuator unless stated, noisy rows: 10 seeds).
-The variant `pi_time_aware` (law and units in `ptpsim/controllers.py`) is compared **only** on the numbers below;
-it is not claimed better outside them.
+oscillator +20 ppm, ideal actuator unless stated, noisy rows: 10 seeds). The servo only starts after the first
+valid delay sample (≈ 3 s: the first Delay_Req is sent at a random time in (0, 2·2ⁿ] s), so the offset has already
+grown to ≈ 160 µs when the **first PI command** is issued; **overshoot is measured against that value** (it is the
+same for both controllers), *undershoot* is the opposite-side excursion in µs, settling is counted from t = 0.
+The variant `pi_time_aware` (law and units in `ptpsim/controllers.py`) is compared **only** on the numbers below.
 
-| scenario | controller | settling (±1 µs, 10 s) | overshoot | RMS offset |
-|---|---|---|---|---|
-| deterministic, Sync 0.25 s | baseline_pi | 14.6 s | 69 % | 0.7 ns |
-| deterministic, Sync 0.25 s | pi_time_aware | **9.6 s** | **19 %** | 0.6 ns |
-| noisy (±2 µs band) | baseline_pi | 11.6 ± 1.7 s | 61 ± 10 % | 222 ± 32 ns |
-| noisy (±2 µs band) | pi_time_aware | **7.3 ± 1.2 s** | **15 ± 4 %** | 211 ± 26 ns |
+| scenario | controller | settling (±1 µs, 10 s) | overshoot | undershoot | RMS offset (final 60 s) |
+|---|---|---|---|---|---|
+| deterministic, Sync 0.25 s | baseline_pi | 14.6 s | 43 % | 69 µs | 0.7 ns |
+| deterministic, Sync 0.25 s | pi_time_aware | **9.6 s** | **12 %** | **19 µs** | 0.6 ns |
+| noisy (±2 µs band, 10 seeds) | baseline_pi | 11.6 ± 1.7 s | 43 ± 1 % | 61 µs | 222 ± 32 ns |
+| noisy (±2 µs band, 10 seeds) | pi_time_aware | **7.3 ± 1.2 s** | **11 ± 2 %** | **15 µs** | 211 ± 26 ns |
+
+Across Sync intervals (Delay_Req 2 s, deterministic): the variant has 4–13 % overshoot and is faster up to
+Sync 0.25 s (9.5–9.6 s vs 14.6–17.3 s); at **Sync 0.5 s it is on par** (12.2 vs 12.8 s) and at **1 s it is slower**
+(19.5 vs 13.7 s, with 4 % vs 25 % overshoot) because its bandwidth is capped for stability (`wn·dt ≤ 0.35`).
+At Sync ≥ 2 s the baseline diverges in the model while the variant settles in 24–83 s. The noisy-scenario RMS
+is set by the path jitter and is essentially the same for both. See the full tables for Delay_Req sweeps,
+actuators and message loss: with 5 % loss the variant still settles faster (9.3 vs 14.1 s), but with **20 % loss it is
+worse** (RMS 427 vs 307 ns, 280 s vs 16 s settling) — it is not claimed better there.
 
 ![step response](docs/img/step_response.png)
+![sync sweep](docs/img/sync_sweep.png)
 
 Findings (model predictions, with the evidence in the tests/results):
 
-1. **The baseline's damping depends on the Sync interval.** `ki` acts per sample, so the continuous-time loop has
-   ζ = kp / (2·sqrt(ki/T)): 0.64 at T = 1 s (the interval the Kconfig help says it is tuned for) but 0.32 at 0.25 s →
-   69 % overshoot (100 % at 62.5 ms). `tests/test_engine.py::test_matches_discrete_closed_loop_recursion_exactly`
-   checks the loop against its analytic recursion to 1e-3 ns.
+1. **The baseline's loop shape depends on the Sync interval.** `ki` acts per sample, so the continuous-time
+   integral gain is `ki/T`: the continuous-approximation damping `ζ = kp / (2·sqrt(ki/T))` is 0.64 at T = 1 s (the
+   interval the Kconfig help says it is tuned for) but 0.32 at T = 0.25 s, and the overshoot grows as the Sync interval
+   shrinks (25 % at 1 s → 64 % at 62.5 ms in the sweep). `tests/test_engine.py::test_matches_discrete_closed_loop_recursion_exactly`
+   checks the simulated loop against its analytic recursion to 1e-3 ns.
 2. **The delay estimate is biased by the servo itself.** `delay = ((t2−t3)+(t4−t1))/2` pairs the latest Sync's `t2`
-   with a later `t3`: error = (offset(t2) − offset(t3))/2 even on a constant, symmetric network (figure above).
+   with a later `t3`: error = (offset(t2) − offset(t3))/2 even on a constant, symmetric network (figure above:
+   up to ±2 µs on a 1 µs delay during the transient).
 3. **At Sync ≥ 2 s the baseline diverges in the model** (Delay_Req 2 s): the ideal loop's poles are stable, but with the
    firmware's delay estimator the loop is not (`test_baseline_instability_at_long_sync_comes_from_delay_estimate_coupling`:
-   stable with exact delay, resets forever with the estimated one). Treat as a hypothesis to check on hardware.
+   stable with exact delay, resets forever with the estimated one). A hypothesis to check on hardware.
 4. **Large initial offsets:** the PI is not clamped, so an offset above ≈ 71 ms asks for > 50 000 ppm and the NXP
    driver rejects it → `clock_servo_reset()` loop (the 100 ms outlier rule only applies after lock).
-5. **24 MHz clock root:** with `INC = 41` the reachable average rates near ratio 1.0 are ≈ 63 ppm apart (table in
-   [docs/model.md](docs/model.md)), so a few-ppm oscillator error cannot be compensated and the servo dithers
-   (µs-level RMS in the model; the PR #121108 commit reports 236 ns median on hardware, with oscillator errors and
-   conditions unknown to the simulator). At 100 MHz (whole tick) the actuator is fine-grained.
+5. **24 MHz clock root (INC = 41):** the reachable average rates near ratio 1.0 are ≈ 63 ppm apart (table in
+   [docs/model.md](docs/model.md)), so any oscillator error is realised by dithering between the nominal pair and a
+   neighbour 63 ppm away. In the model the median |offset| at 24 MHz exceeds the 236 ns reported on hardware in the
+   commit message of PR #121108 as soon as the relative frequency error is above ≈ 0.002 ppm, while 98.304 / 100 /
+   196.608 MHz give ≈ 155 ns whatever the error ([`results/nxp_root_sweep.md`](results/nxp_root_sweep.md),
+   noisy preset). Either the boards shared a frequency reference in that measurement, or the simulator's model of the
+   correction counter near nominal is incomplete — **this needs the real conditions to be settled** (see questions below).
 
 ## GUI
 
@@ -131,14 +147,15 @@ loss, actuator and clock root.
   explicit integrator policy on gain changes (*keep / reset / bumpless*), start/pause/reset and playback speed
   (the speed only changes how much simulated time is requested per tick, never the maths).
 * Simulations run in a **worker process** (the engine is pure Python: a thread would fight the GUI for the GIL),
-  with 80 ms debounce, cooperative cancellation between 20 s chunks, results of superseded requests discarded,
+  with 40 ms debounce, cooperative cancellation between 20 s chunks, results of superseded requests discarded,
   widgets updated only in the GUI thread, bounded live buffers, rendering down-sampling only
   (`pyqtgraph` peak-mode) — metrics use the full data.
-* Measured reactivity (offscreen Qt, 300 s deterministic default): change → new curves **median 125 ms, p95 150 ms**
-  ([`bench/results_gui_deterministic.json`](bench/results_gui_deterministic.json)); NXP 172 ms median, baseline
-  overlay 159 ms. Engine alone: 29 ms for 300 s ([`bench/results_engine.json`](bench/results_engine.json)). No JIT
-  was needed. Drawing takes ≈ 45 ms of GUI thread per update (axis/grid painting); the heartbeat gap measured
-  during computation is that, not the simulation.
+* Measured reactivity (offscreen Qt, software rendering, 300 s scenario, **from the parameter change to the end of the
+  repaint**, 40 trials): default deterministic **median 124 ms, p95 144 ms**; NXP actuator 171 / 179 ms; baseline overlay
+  171 / 189 ms ([`bench/results_gui_*.json`](bench)). The engine alone takes 29 ms (ideal) / 76 ms (NXP) for 300 s
+  ([`bench/results_engine.json`](bench/results_engine.json)); no JIT was needed. The *calculation* never blocks the GUI
+  (separate process), but each redraw occupies the GUI thread for ≈ 80 ms (p99 of a 5 ms heartbeat gap, mostly pyqtgraph
+  axis/grid painting). A real display may differ from the offscreen figures.
 
 ## Metrics (definitions)
 

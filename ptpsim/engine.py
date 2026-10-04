@@ -31,7 +31,7 @@ from . import fwport
 from .actuators import make_actuator
 from .clock import PS_PER_NS, SlaveClock
 from .config import SimConfig, set_path
-from .controllers import Controller, ServoSample, make_controller
+from .controllers import REGISTRY, Controller, ServoSample, make_controller
 from .rng import Disturbances
 
 PS_PER_S = 1_000_000_000_000
@@ -123,6 +123,7 @@ class Simulation:
         self.dreq_nominal = 0
         self._dreq_gen = 0       # generation counter to cancel a stale timer
         self.osc_i = 0
+        self._osc_gen = 0        # generation counter: a live change of drift/walk restarts the chain
 
         # ---- slave firmware state (clock.c / port.c) -------------------------------------
         self.fw_slot: tuple | None = None        # port->last_sync_fup
@@ -252,7 +253,7 @@ class Simulation:
         if c.intervals.delay_mode == "interval":
             self._arm_first_delay_timer()
         if self._osc_dynamic():
-            self._push(_ps(c.oscillator.update_period_s * 1e9), P_RATE, self._on_osc_update)
+            self._push(_ps(c.oscillator.update_period_s * 1e9), P_RATE, self._on_osc_update, self._osc_gen)
 
     def _osc_dynamic(self) -> bool:
         o = self.cfg.oscillator
@@ -481,7 +482,9 @@ class Simulation:
         self._r_cmd.append(self._last_cmd_ppb)
         self._r_eff.append(slope * 1e9)
 
-    def _on_osc_update(self, _arg) -> None:
+    def _on_osc_update(self, gen) -> None:
+        if gen != self._osc_gen:
+            return                                    # superseded by a live change
         o = self.cfg.oscillator
         dt = o.update_period_s
         self.eps_ppb += o.drift_ppb_per_s * dt
@@ -490,7 +493,7 @@ class Simulation:
         self.osc_i += 1
         self._apply_slope()
         if self._osc_dynamic():
-            self._push(self.now + _ps(dt * 1e9), P_RATE, self._on_osc_update)
+            self._push(self.now + _ps(dt * 1e9), P_RATE, self._on_osc_update, self._osc_gen)
 
     # ------------------------------------------------------------------ Delay_Req (slave)
     def _timer_interval_ps(self, log_n: int) -> int:
@@ -603,19 +606,28 @@ class Simulation:
         gain changes is explicit (``keep`` | ``reset`` | ``bumpless``); nothing is reset silently."""
         c = self.cfg
         old_mode = c.intervals.delay_mode
-        old_ctrl = (c.controller.name,)
+        old_name = c.controller.name
+        new_name = overrides.get("controller.name", old_name)
+        if new_name != old_name:
+            c.controller.params = {}                  # parameters of the old class do not apply
         ctrl_params: dict[str, float] = {}
         for k, v in overrides.items():
             if k.startswith("controller.params."):
                 ctrl_params[k.split(".", 2)[2]] = v
             set_path(c, k, v)
         notes = []
-        if c.controller.name != old_ctrl[0]:
-            prev_out = self.ctrl.last_output
-            self.ctrl = make_controller(c.controller.name, c.controller.params)
-            if controller_policy == "bumpless":
-                self.ctrl._set_integral(prev_out - self.ctrl._proportional(0.0))
-            notes.append(f"controller -> {c.controller.name} ({controller_policy})")
+        if new_name != old_name:
+            old = self.ctrl
+            cls = REGISTRY[new_name]
+            params = {k: v for k, v in c.controller.params.items() if k in cls.PARAMS}
+            c.controller.params = dict(params)
+            self.ctrl = make_controller(new_name, params)
+            self.ctrl.last_error, self.ctrl.last_output = old.last_error, old.last_output
+            if controller_policy == "keep":               # same physical quantity (ppb): carry it over
+                self.ctrl._set_integral(old.integral)
+            elif controller_policy == "bumpless":         # output continuous w.r.t. the last error
+                self.ctrl._set_integral(old.last_output - self.ctrl._proportional(old.last_error))
+            notes.append(f"controller {old_name} -> {new_name} ({controller_policy})")
         elif ctrl_params:
             self.ctrl.set_params(ctrl_params, controller_policy)
             notes.append(f"gains {ctrl_params} ({controller_policy})")
@@ -627,9 +639,12 @@ class Simulation:
         if "oscillator.freq_error_ppb" in overrides:
             self.eps_ppb = c.oscillator.freq_error_ppb
             self._apply_slope()
-        if any(k.startswith("oscillator.") and k.split(".")[1] in ("drift_ppb_per_s", "walk_ppb_per_sqrt_s")
-               for k in overrides) and self._osc_dynamic():
-            self._push(self.now + _ps(c.oscillator.update_period_s * 1e9), P_RATE, self._on_osc_update)
+        if any(k.startswith("oscillator.") and k.split(".")[1] in ("drift_ppb_per_s", "walk_ppb_per_sqrt_s",
+                                                                    "update_period_s") for k in overrides):
+            self._osc_gen += 1                        # cancel the running chain, start a new one if needed
+            if self._osc_dynamic():
+                self._push(self.now + _ps(c.oscillator.update_period_s * 1e9), P_RATE, self._on_osc_update,
+                           self._osc_gen)
         if "intervals.delay_log" in overrides:
             notes.append(f"GM advertises Delay_Req 2^{c.intervals.delay_log}")
         if c.intervals.delay_mode != old_mode:

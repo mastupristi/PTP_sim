@@ -17,11 +17,14 @@ class ParamRow(QtCore.QObject):
 
     def __init__(self, label: str, paths: list[str], lo: float, hi: float, value: float, step: float,
                  decimals: int = 3, suffix: str = "", scale: float = 1.0, slider: bool = True,
-                 log: bool = False, integer: bool = False, parent=None, tooltip: str = ""):
+                 log: bool = False, integer: bool = False, parent=None, tooltip: str = "",
+                 symlog: bool = False, decades: float = 6.0):
         super().__init__(parent)
         self.paths = paths
         self.scale = scale
         self.log = log and lo > 0
+        self.symlog = symlog          # signed logarithmic slider: resolution near 0 and reach up to +-hi
+        self.decades = decades
         self.integer = integer
         self.label = QtWidgets.QLabel(label)
         if integer:
@@ -41,7 +44,7 @@ class ParamRow(QtCore.QObject):
         self.slider = None
         if slider:
             self.slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-            self.slider.setRange(0, 1000)
+            self.slider.setRange(-1000 if symlog else 0, 1000)
             self.slider.setMinimumWidth(90)
             self._sync_slider()
             self.slider.valueChanged.connect(self._on_slider)
@@ -53,6 +56,12 @@ class ParamRow(QtCore.QObject):
     # --- mapping slider <-> spin
     def _pos_from_value(self, v: float) -> int:
         lo, hi = self.spin.minimum(), self.spin.maximum()
+        if self.symlog:
+            m = max(abs(lo), abs(hi))
+            if v == 0:
+                return 0
+            f = max(0.0, 1.0 + math.log10(min(abs(v), m) / m) / self.decades)
+            return int(round(math.copysign(f, v) * 1000))
         if hi <= lo:
             return 0
         if self.log:
@@ -63,6 +72,10 @@ class ParamRow(QtCore.QObject):
 
     def _value_from_pos(self, p: int) -> float:
         lo, hi = self.spin.minimum(), self.spin.maximum()
+        if self.symlog:
+            m = max(abs(lo), abs(hi))
+            f = abs(p) / 1000.0
+            return 0.0 if f == 0 else math.copysign(m * 10.0 ** (self.decades * (f - 1.0)), p)
         f = p / 1000.0
         if self.log:
             return math.exp(math.log(lo) + f * (math.log(hi) - math.log(lo)))

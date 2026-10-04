@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from .config import SimConfig, noisy_preset
+from .config import SimConfig, default_scenario, noisy_preset
 from .engine import simulate
 from .export import export_result
 from .metrics import compute_metrics
@@ -16,7 +16,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="ptpsim-run", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run", help="run one configuration and export CSV/JSON")
-    r.add_argument("--config", help="JSON configuration (default: built-in deterministic scenario)")
+    r.add_argument("--config", help="JSON configuration (default: the deterministic scenario with 100 us / +20 ppm)")
     r.add_argument("--preset", choices=["default", "noisy"], default="default")
     r.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                    help="override, e.g. --set intervals.sync_log=-3 (JSON values)")
@@ -29,7 +29,7 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
 
     if a.cmd == "run":
-        cfg = SimConfig.load(a.config) if a.config else (noisy_preset() if a.preset == "noisy" else SimConfig())
+        cfg = SimConfig.load(a.config) if a.config else (noisy_preset() if a.preset == "noisy" else default_scenario())
         ov = {}
         for kv in a.set:
             k, v = kv.split("=", 1)

@@ -23,7 +23,7 @@ import numpy as np
 import pyqtgraph as pg
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ..config import JitterSpec, SimConfig, noisy_preset, set_path
+from ..config import JitterSpec, SimConfig, default_scenario, noisy_preset, set_path
 from ..controllers import POLICIES, REGISTRY
 from ..engine import interval_ps
 from .params import ParamRow
@@ -74,14 +74,15 @@ class ResultReader(QtCore.QThread):
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    DEBOUNCE_MS = 80
+    DEBOUNCE_MS = 40
     LIVE_TICK_MS = 40
 
-    def __init__(self, cfg: SimConfig | None = None):
+    def __init__(self, cfg: SimConfig | None = None, start_worker: bool = True):
         super().__init__()
         self.setWindowTitle("PTP_sim — simulatore PTPv2 closed-loop (Zephyr time receiver)")
         self.resize(1500, 950)
-        self.base_cfg = (cfg or SimConfig()).copy()
+        self.base_cfg = (cfg or default_scenario()).copy()
+        self._dirty: set[str] = set()        # widgets edited since the last load: only these override base_cfg
         self.rows: dict[str, ParamRow] = {}
         self.ctrl_rows: dict[str, ParamRow] = {}
         self.mode = "explore"
@@ -104,7 +105,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.live_resetting = False
         self._last_draw = 0.0
 
-        self._start_worker()
+        if start_worker:
+            self._start_worker()
+        else:                                # widget/config tests without a worker process
+            self.req_q = self.res_q = self.proc = self.reader = None
+            self.latest = type("Gen", (), {"value": 0})()
         self._build_ui()
         self.debounce = QtCore.QTimer(self)
         self.debounce.setSingleShot(True)
@@ -127,22 +132,28 @@ class MainWindow(QtWidgets.QMainWindow):
         self.reader.received.connect(self._on_reply)
         self.reader.start()
 
+    def _send(self, msg: dict) -> None:
+        if self.req_q is not None:
+            self.req_q.put(msg)
+
     def closeEvent(self, ev):
         try:
             self.live_timer.stop()
             self.latest.value = -1
-            self.req_q.put({"cmd": "quit"})
-            self.reader.stop()
-            self.reader.wait(1000)
-            self.proc.join(1.0)
-            if self.proc.is_alive():
-                self.proc.terminate()
+            if self.proc is not None:
+                self._send({"cmd": "quit"})
+                self.reader.stop()
+                self.reader.wait(1000)
+                self.proc.join(1.0)
+                if self.proc.is_alive():
+                    self.proc.terminate()
         finally:
             super().closeEvent(ev)
 
     # ------------------------------------------------------------------ UI construction
     def _row(self, name, grid, r, *args, **kw) -> ParamRow:
         row = ParamRow(*args, **kw)
+        row.name = name
         row.add_to(grid, r)
         row.changed.connect(self._on_param_changed)
         self.rows[name] = row
@@ -240,8 +251,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # ---- initial conditions
         g, grid = self._group("Condizioni iniziali / durata")
-        self._row("offset0", grid, 0, "Offset iniziale", ["oscillator.initial_offset_ns"], -2000.0, 2000.0,
-                  c.oscillator.initial_offset_ns / 1e3, 1.0, decimals=1, suffix="µs", scale=1e3)
+        self._row("offset0", grid, 0, "Offset iniziale", ["oscillator.initial_offset_ns"], -2.0e6, 2.0e6,
+                  c.oscillator.initial_offset_ns / 1e3, 10.0, decimals=1, suffix="µs", scale=1e3, symlog=True,
+                  tooltip="±2 s: oltre 1 s il firmware fa uno step; oltre ≈71 ms il PI base chiede > 50000 ppm (reset)")
         self._row("freq0", grid, 1, "Errore di frequenza", ["oscillator.freq_error_ppb"], -200.0, 200.0,
                   c.oscillator.freq_error_ppb / 1e3, 0.1, decimals=2, suffix="ppm", scale=1e3)
         self._row("duration", grid, 2, "Durata", ["duration_s"], 10.0, 3600.0, c.duration_s, 10.0, decimals=0,
@@ -427,6 +439,7 @@ class MainWindow(QtWidgets.QMainWindow):
             val = params.get(k, dflt)
             row = ParamRow(k, [f"controller.params.{k}"], lo, hi, val, (hi - lo) / 200.0 if hi < 100 else 1.0,
                            decimals=3 if hi <= 20 else 1, tooltip=desc)
+            row.name = "ctrl." + k
             row.add_to(self.ctrl_grid, i)
             row.changed.connect(self._on_param_changed)
             self.rows["ctrl." + k] = row
@@ -450,31 +463,45 @@ class MainWindow(QtWidgets.QMainWindow):
         return out
 
     def _all_overrides(self) -> dict:
+        """Overrides of ``base_cfg`` coming from the widgets.
+
+        Only widgets the user *edited since the last load* (``_dirty``) override their fields, so a loaded
+        configuration is reproduced exactly even where a widget cannot represent it (clamped range,
+        per-type jitter/loss collapsed into one control, ...).  Combos and the controller are always applied.
+        """
         ov: dict = {}
-        for row in self.rows.values():
-            if row.paths:
+        for name, row in self.rows.items():
+            if row.paths and name in self._dirty and not name.startswith("ctrl."):
                 ov.update(self._row_overrides(row))
         ov["intervals.delay_mode"] = "interval" if self.delay_mode.currentIndex() == 0 else "every_n_sync"
         ov["intervals.delay_rearm_from_handling"] = self.chk_rearm.isChecked()
         ov["actuator.kind"] = "ideal" if self.act_combo.currentIndex() == 0 else "nxp"
-        ov["actuator.clock_hz"] = int(self.root_combo.currentData())
+        if "root" in self._dirty:
+            ov["actuator.clock_hz"] = int(self.root_combo.currentData())
         ov["controller.name"] = self.ctrl_combo.currentText()
-        # jitter kinds follow the scale
-        for p in ("sync", "follow_up", "delay_req", "delay_resp"):
-            ov[f"tx_jitter.{p}.kind"] = "normal" if ov[f"tx_jitter.{p}.scale_ns"] > 0 else "none"
-        for p in ("jitter_ms", "jitter_sm"):
-            ov[f"network.{p}.kind"] = "exponential" if ov[f"network.{p}.scale_ns"] > 0 else "none"
+        same = ov["controller.name"] == self.base_cfg.controller.name
+        for k, row in self.ctrl_rows.items():
+            if (not same) or ("ctrl." + k) in self._dirty:
+                ov[f"controller.params.{k}"] = row.config_value()
+        # jitter kinds follow the scale of the edited control
+        if "tx_jit" in self._dirty:
+            for p in ("sync", "follow_up", "delay_req", "delay_resp"):
+                ov[f"tx_jitter.{p}.kind"] = "normal" if ov[f"tx_jitter.{p}.scale_ns"] > 0 else "none"
+        if "net_jit" in self._dirty:
+            for p in ("jitter_ms", "jitter_sm"):
+                ov[f"network.{p}.kind"] = "exponential" if ov[f"network.{p}.scale_ns"] > 0 else "none"
         return ov
 
     def build_config(self) -> SimConfig:
         cfg = self.base_cfg.copy()
         ov = self._all_overrides()
-        ctrl_params = {k.split(".")[-1]: v for k, v in ov.items() if k.startswith("controller.params.")}
+        if ov["controller.name"] != cfg.controller.name:
+            cfg.controller.name = ov["controller.name"]
+            cfg.controller.params = {}
         for k, v in ov.items():
-            if k.startswith("controller.params."):
+            if k == "controller.name":
                 continue
             set_path(cfg, k, v)
-        cfg.controller.params = ctrl_params
         return cfg
 
     def _metrics_cfg(self) -> dict:
@@ -482,7 +509,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 "final_window_s": self.m_win.config_value()}
 
     def _apply_cfg_to_widgets(self, c: SimConfig):
+        """Load a configuration: widgets show it, ``base_cfg`` keeps it exactly (nothing is dirty)."""
         self.base_cfg = c.copy()
+        self._dirty.clear()
         self.ctrl_combo.blockSignals(True)
         self.ctrl_combo.setCurrentText(c.controller.name)
         self.ctrl_combo.blockSignals(False)
@@ -492,34 +521,40 @@ class MainWindow(QtWidgets.QMainWindow):
                 "duration": c.duration_s, "seed": c.seed, "drift": c.oscillator.drift_ppb_per_s,
                 "timer_err": c.oscillator.timer_error_ppb,
                 "d_mean": (c.network.delay_ms_ns + c.network.delay_sm_ns) / 2,
-                "d_asym": c.network.delay_ms_ns - c.network.delay_sm_ns + c.network.delay_asymmetry_ns * 0,
+                "d_asym": c.network.delay_ms_ns - c.network.delay_sm_ns,
                 "net_jit": c.network.jitter_ms.scale_ns, "tx_jit": c.tx_jitter.sync.scale_ns,
                 "lat_fup": c.latency.follow_up_ns, "lat_dresp": c.latency.delay_resp_ns, "lat_cmd": c.latency.command_ns,
                 "ts_noise": c.timestamps.gm_noise_sigma_ns, "gm_q": c.timestamps.gm_quantum_ns, "loss": c.loss.sync}
         for k, v in vals.items():
             self.rows[k].set_config_value(v)
-        self.delay_mode.blockSignals(True)
-        self.delay_mode.setCurrentIndex(0 if c.intervals.delay_mode == "interval" else 1)
-        self.delay_mode.blockSignals(False)
-        self.chk_rearm.setChecked(c.intervals.delay_rearm_from_handling)
-        self.act_combo.blockSignals(True)
-        self.act_combo.setCurrentIndex(0 if c.actuator.kind == "ideal" else 1)
-        self.act_combo.blockSignals(False)
+        for w, fn in ((self.delay_mode, lambda: self.delay_mode.setCurrentIndex(0 if c.intervals.delay_mode == "interval" else 1)),
+                      (self.act_combo, lambda: self.act_combo.setCurrentIndex(0 if c.actuator.kind == "ideal" else 1)),
+                      (self.chk_rearm, lambda: self.chk_rearm.setChecked(c.intervals.delay_rearm_from_handling))):
+            w.blockSignals(True)
+            fn()
+            w.blockSignals(False)
+        self.root_combo.blockSignals(True)
         i = self.root_combo.findData(c.actuator.clock_hz)
         if i >= 0:
             self.root_combo.setCurrentIndex(i)
+        self.root_combo.blockSignals(False)
         self._first_autorange = True
-        self._on_param_changed(None, 0.0, "__all__")
+        self._update_interval_labels()
+        self._update_enabled()
+        if self.mode == "live":
+            self._live_reset()
+        else:
+            self.t_change = time.perf_counter()
+            self.debounce.start()
 
     def _apply_noisy_preset(self):
         c = noisy_preset()
-        cur = self.build_config()
-        c.duration_s, c.seed = cur.duration_s, cur.seed
-        c.controller, c.actuator, c.intervals = cur.controller, cur.actuator, cur.intervals
         self.rows["net_jit"].set_config_value(c.network.jitter_ms.scale_ns)
         self.rows["tx_jit"].set_config_value(c.tx_jitter.sync.scale_ns)
         self.rows["ts_noise"].set_config_value(c.timestamps.gm_noise_sigma_ns)
-        self._on_param_changed(None, 0.0, "__all__")
+        self._dirty.update({"net_jit", "tx_jit", "ts_noise"})
+        for name in ("net_jit", "tx_jit", "ts_noise"):
+            self._on_param_changed(self.rows[name], 0.0)
 
     # ------------------------------------------------------------------ change handling
     def _update_interval_labels(self):
@@ -551,12 +586,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_interval_labels()
         self._update_enabled()
         self.t_change = time.perf_counter()
+        if row is not None and getattr(row, "paths", None):
+            self._dirty.add(row.name)
+        if tag == "actuator.clock_hz":
+            self._dirty.add("root")
         if tag == "__metrics__":
             if self.mode == "explore":
                 self.debounce.start()
             return
         if self.mode == "live":
             if self.live_state == "stopped":
+                self.debounce.start()            # not started yet: rebuild the session from the widgets
                 return
             ov = self._all_overrides()
             if row is not None:
@@ -565,13 +605,14 @@ class MainWindow(QtWidgets.QMainWindow):
                 changed = {k: ov[k] for k in ([tag] if tag and not tag.startswith("__") else [])}
             if tag == "controller.name":
                 changed = {k: v for k, v in ov.items() if k.startswith("controller.")}
+                changed["controller.name"] = ov["controller.name"]
             if tag == "actuator.clock_hz" or tag == "actuator.kind":
-                changed = {"actuator.kind": ov["actuator.kind"], "actuator.clock_hz": ov["actuator.clock_hz"]}
+                changed = {"actuator.kind": ov["actuator.kind"],
+                           "actuator.clock_hz": ov.get("actuator.clock_hz", self.base_cfg.actuator.clock_hz)}
             if row is not None:
                 for p in row.paths:
-                    if p.startswith("tx_jitter") or p.startswith("network.jitter"):
-                        base = p.rsplit(".", 1)[0]
-                        changed[base + ".kind"] = ov[base + ".kind"]
+                    if (p.startswith("tx_jitter") or p.startswith("network.jitter")) and (p.rsplit(".", 1)[0] + ".kind") in ov:
+                        changed[p.rsplit(".", 1)[0] + ".kind"] = ov[p.rsplit(".", 1)[0] + ".kind"]
             self._pending_live.update(changed)
             self.debounce.start()
         else:
@@ -580,10 +621,12 @@ class MainWindow(QtWidgets.QMainWindow):
     def _debounced(self):
         if self.mode == "explore":
             self._request_explore()
-        elif self._pending_live and self.live_state != "stopped":
+        elif self.live_state == "stopped":
+            self._live_reset()                   # changes before Start apply from t = 0
+        elif self._pending_live:
             ov, self._pending_live = self._pending_live, {}
             policy = POLICIES[self.live_policy.currentIndex()]
-            self.req_q.put({"cmd": "live_update", "gen": self.gen, "overrides": ov, "policy": policy})
+            self._send({"cmd": "live_update", "gen": self.gen, "overrides": ov, "policy": policy})
 
     # ------------------------------------------------------------------ explore
     def _request_explore(self):
@@ -591,7 +634,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.latest.value = self.gen
         cfg = self.build_config()
         self.status.setText("calcolo in corso…")
-        self.req_q.put({"cmd": "explore", "gen": self.gen, "cfg": cfg.to_dict(),
+        self._send({"cmd": "explore", "gen": self.gen, "cfg": cfg.to_dict(),
                         "overlay": self.chk_overlay.isChecked(), "mc": self._metrics_cfg()})
 
     def _on_overlay_toggled(self, on):
@@ -640,6 +683,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if self._first_autorange:
                 self._autorange()
                 self._first_autorange = False
+            self.glw.viewport().repaint()          # include the paint in the measured latency
             lat = (time.perf_counter() - self.t_change) * 1e3 if self.t_change else float("nan")
             self.last_ms["gui"] = lat
             self.n_results += 1
@@ -679,7 +723,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._clear_plots()
         self._first_autorange = True
         self._update_enabled()
-        self.req_q.put({"cmd": "live_reset", "gen": self.gen, "cfg": self.build_config().to_dict(),
+        self._send({"cmd": "live_reset", "gen": self.gen, "cfg": self.build_config().to_dict(),
                         "overlay": self.chk_overlay.isChecked()})
 
     def _live_start(self):
@@ -708,7 +752,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._live_pause()
             return
         self.live_busy = True
-        self.req_q.put({"cmd": "live_advance", "gen": self.gen, "t_target": target})
+        self._send({"cmd": "live_advance", "gen": self.gen, "t_target": target})
         self.live_t = target
 
     def _ingest_live(self, delta: dict):
@@ -897,7 +941,7 @@ class MainWindow(QtWidgets.QMainWindow):
         d = QtWidgets.QFileDialog.getExistingDirectory(self, "Cartella di esportazione", "results")
         if d:
             self.status.setText("esportazione…")
-            self.req_q.put({"cmd": "export", "cfg": self.build_config().to_dict(), "dir": d, "mc": self._metrics_cfg()})
+            self._send({"cmd": "export", "cfg": self.build_config().to_dict(), "dir": d, "mc": self._metrics_cfg()})
 
 
 def main(argv=None):

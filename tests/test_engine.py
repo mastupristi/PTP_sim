@@ -506,3 +506,62 @@ def test_baseline_instability_at_long_sync_comes_from_delay_estimate_coupling():
     assert np.max(np.abs(r.true_offset_ns(np.linspace(500, 600, 400)))) < 5.0
     r2 = simulate(cfg)
     assert r2.counters["range_resets"] > 20 or np.max(np.abs(r2.true_offset_ns(np.linspace(500, 600, 400)))) > 1e4
+
+
+# ------------------------------------------------------------------ live parameter changes
+
+@pytest.mark.parametrize("policy", ["keep", "reset", "bumpless"])
+def test_live_controller_switch_both_directions(policy):
+    cfg = quiet_cfg()
+    cfg.duration_s = 80.0
+    cfg.oscillator.initial_offset_ns = 100_000.0
+    cfg.oscillator.freq_error_ppb = 20_000.0
+    sim = Simulation(cfg)
+    sim.run_until(30.0)
+    pre = sim.ctrl.integral
+    sim.update_config({"controller.name": "pi_time_aware", "controller.params.wn": 1.0,
+                       "controller.params.zeta": 1.0, "controller.params.sat_ppb": 400000.0,
+                       "controller.params.wn_ts_max": 0.35, "controller.params.dt_clamp": 4.0}, policy)
+    assert sim.ctrl.name == "pi_time_aware" and set(sim.cfg.controller.params) == set(sim.ctrl.params)
+    if policy == "keep":
+        assert sim.ctrl.integral == pytest.approx(pre)
+    elif policy == "reset":
+        assert sim.ctrl.integral == 0.0
+    sim.run_until(55.0)
+    sim.update_config({"controller.name": "baseline_pi", "controller.params.kp": 0.7,
+                       "controller.params.ki": 0.3}, policy)
+    assert sim.ctrl.name == "baseline_pi" and sim.cfg.controller.params == {"kp": 0.7, "ki": 0.3}
+    sim.run_until(80.0)
+    r = sim.result()
+    assert r.counters["range_resets"] == 0 and len(r.changes) == 2
+    assert abs(r.true_offset_ns(np.array([79.0]))[0]) < 50.0         # kept converging through both switches
+
+
+def test_live_switch_without_new_params_uses_defaults():
+    sim = Simulation(quiet_cfg())
+    sim.run_until(5.0)
+    sim.update_config({"controller.name": "pi_time_aware"}, "reset")
+    assert sim.ctrl.params["wn"] == 1.0
+    sim.update_config({"controller.name": "baseline_pi"}, "reset")
+    assert sim.ctrl.params == {"kp": 0.7, "ki": 0.3}
+
+
+def test_live_drift_change_does_not_double_the_drift():
+    cfg = no_control(quiet_cfg())
+    cfg.duration_s = 100.0
+    cfg.oscillator.drift_ppb_per_s = 10.0
+    cfg.loss.delay_req = 1.0
+    ref = Simulation(cfg)
+    ref.fw_mean_delay = 1000
+    ref.run_until(100.0)
+    sim = Simulation(cfg)
+    sim.fw_mean_delay = 1000
+    sim.run_until(30.0)
+    sim.update_config({"oscillator.drift_ppb_per_s": 10.0 + 1e-12})   # nonzero -> nonzero
+    sim.update_config({"oscillator.drift_ppb_per_s": 10.0})
+    sim.run_until(100.0)
+    a, b = ref.result(), sim.result()
+    t = np.array([50.0, 100.0 - 1e-6])
+    assert np.allclose(a.true_offset_ns(t), b.true_offset_ns(t), rtol=1e-6)
+    # drift 10 ppb/s for 100 s: eps(t) = 10 t ppb -> phi = 5 t^2 ns (1 s steps)
+    assert b.true_offset_ns(np.array([99.0]))[0] == pytest.approx(5 * 99.0 ** 2, rel=0.02)

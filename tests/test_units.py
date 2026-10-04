@@ -188,7 +188,7 @@ def test_metrics_edge_cases_never_settles_zero_initial_offset_and_divergence():
     m = compute_metrics(simulate(cfg), MetricsConfig(band_ns=1000.0))
     t = m["true_offset"]
     assert t["settling_s"] is None and "outside" in t["settling_reason"]
-    assert t["overshoot_pct"] is None                                 # x0 == 0: undefined
+    assert t["overshoot_pct"] == 0.0 and t["overshoot_vs_initial_pct"] is None   # no opposite excursion; x0 == 0
     assert t["peak_abs_ns"] == pytest.approx(5.0e6, rel=1e-6)         # exact vertex peak
     cfg = no_control(quiet_cfg())                                     # nothing happens at all
     cfg.duration_s = 30.0

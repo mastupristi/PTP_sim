@@ -7,12 +7,17 @@ piecewise-linear vertices; the *estimated* offset is the firmware's estimate at 
 
 Definitions
 -----------
-* **Reference** ``x0``: offset at t = 0 (``initial_offset_ns``).
+* **Servo start**: the first PI command.  The servo only starts after the first valid delay sample (the
+  first Delay_Req is sent at a random time in (0, 2*2^n] s), so up to a few seconds elapse during which the
+  clock runs free (e.g. 100 us + 20 ppm * 3 s = 160 us).  Both controllers share this phase.
+* **Reference** ``x_ref``: the true offset at the servo start (the "step" the controller must reject).
+  ``x_initial`` (offset at t = 0) is also reported.
 * **Settling time**: first instant after which ``|x| <= band`` for the rest of the run, valid only if
   the remaining time is >= ``dwell_s`` (permanence).  ``None`` = never settled (reason reported).
   If the series never leaves the band the settling time is 0.
-* **Overshoot** [%]: ``max(0, max_t(-sign(x0) * x(t))) / |x0| * 100`` - largest excursion to the
-  opposite side of the initial offset.  ``None`` when ``x0 == 0`` (undefined).
+* **Overshoot** [%]: ``max(0, max_{t >= t_servo}(-sign(x_ref) * x(t))) / |x_ref| * 100`` - largest excursion to
+  the opposite side of the reference, also given in ns (``overshoot_ns``).  ``overshoot_vs_initial_pct`` uses
+  ``x_initial`` over the whole run instead.  ``None`` when the reference is 0 (undefined).
 * **Peak error**: ``max |x|`` over the run (true offset: exact, from the piecewise-linear vertices),
   and ``peak_excess = peak - |x0|`` (growth beyond the initial error, e.g. from a frequency error).
 * **RMS / bias** over the final window [T - W, T]: ``sqrt(mean(x^2))`` and ``mean(x)``.
@@ -49,7 +54,10 @@ def true_offset_grid(res: SimResult, dt_s: float = 0.01, max_points: int = 400_0
 
 
 def _series_metrics(t: np.ndarray, x: np.ndarray, x0: float, t_end: float, mc: MetricsConfig,
-                    peak_abs: float | None = None) -> dict:
+                    peak_abs: float | None = None, x_ref: float | None = None, t_from: float = 0.0) -> dict:
+    """``x0``: offset at t = 0; ``x_ref``/``t_from``: reference value and instant (servo start)."""
+    if x_ref is None:
+        x_ref = x0
     out: dict = {"n": int(t.size)}
     if t.size == 0 or not np.all(np.isfinite(x)):
         out.update(settling_s=None, settling_reason="no data" if t.size == 0 else "non-finite values",
@@ -71,12 +79,18 @@ def _series_metrics(t: np.ndarray, x: np.ndarray, x0: float, t_end: float, mc: M
     if t_settle is not None and (t_end - t_settle) < mc.dwell_s:
         t_settle, reason = None, f"inside the band for less than the dwell time ({mc.dwell_s:g} s)"
     out["settling_s"], out["settling_reason"] = t_settle, reason
-    # --- overshoot
-    if x0 == 0:
-        out["overshoot_pct"] = None
+    # --- overshoot (reference: offset at the servo start)
+    after = t >= t_from
+    if x_ref == 0 or not after.any():
+        out["overshoot_pct"], out["overshoot_ns"] = None, None
     else:
-        opposite = -np.sign(x0) * x
-        out["overshoot_pct"] = float(max(0.0, opposite.max()) / abs(x0) * 100.0)
+        ov = float(max(0.0, (-np.sign(x_ref) * x[after]).max()))
+        out["overshoot_ns"], out["overshoot_pct"] = ov, ov / abs(x_ref) * 100.0
+    out["overshoot_ref_ns"], out["overshoot_ref_time_s"] = float(x_ref), float(t_from)
+    if x0 == 0:
+        out["overshoot_vs_initial_pct"] = None
+    else:
+        out["overshoot_vs_initial_pct"] = float(max(0.0, (-np.sign(x0) * x).max()) / abs(x0) * 100.0)
     # --- final window
     w = min(mc.final_window_s, t_end)
     m = t >= (t_end - w)
@@ -85,7 +99,8 @@ def _series_metrics(t: np.ndarray, x: np.ndarray, x0: float, t_end: float, mc: M
     out["rms_final_ns"] = float(np.sqrt(np.mean(xs ** 2)))
     out["bias_final_ns"] = float(np.mean(xs))
     out["std_final_ns"] = float(np.std(xs))
-    big_final = out["rms_final_ns"] > max(abs(x0), mc.band_ns) and out["rms_final_ns"] > 10 * mc.band_ns
+    scale = max(abs(x0), abs(x_ref), mc.band_ns)
+    big_final = out["rms_final_ns"] > scale and out["rms_final_ns"] > 10 * mc.band_ns
     out["diverged"] = bool(peak > mc.divergence_ns or (t_end > 2 * w and big_final))
     return out
 
@@ -98,12 +113,15 @@ def compute_metrics(res: SimResult, mc: MetricsConfig | None = None) -> dict:
     # exact peak over the piecewise-linear vertices
     t0s, p0, _ends, pend = res.clock.segment_end_values(int(round(res.t_end_s * PS_PER_S)))
     peak_true = float(max(np.abs(p0).max(), np.abs(pend).max()))
-    true_m = _series_metrics(tg, xg, x0, res.t_end_s, mc, peak_abs=peak_true)
+    act = np.nonzero(res.servo_action == 0)[0]
+    t_servo = float(res.servo_t_proc_s[act[0]]) if act.size else 0.0
+    x_ref = float(res.true_offset_ns(np.array([t_servo]))[0]) if act.size else x0
+    true_m = _series_metrics(tg, xg, x0, res.t_end_s, mc, peak_abs=peak_true, x_ref=x_ref, t_from=t_servo)
 
     est_t = res.servo_t_sample_s
     est_x = res.servo_offset_est_ns
     ok = np.isfinite(est_x)
-    est_m = _series_metrics(est_t[ok], est_x[ok], x0, res.t_end_s, mc)
+    est_m = _series_metrics(est_t[ok], est_x[ok], x0, res.t_end_s, mc, x_ref=x_ref, t_from=t_servo)
 
     n_upd = int((res.servo_action == 0).sum())
     cmd = res.servo_cmd_ppb[np.isfinite(res.servo_cmd_ppb)]
@@ -117,6 +135,7 @@ def compute_metrics(res: SimResult, mc: MetricsConfig | None = None) -> dict:
         "peak_command_ppb": float(np.abs(cmd).max()) if cmd.size else 0.0,
     }
     metrics = {
+        "servo_start_s": t_servo, "offset_at_servo_start_ns": x_ref, "initial_offset_ns": x0,
         "config_band_ns": mc.band_ns, "dwell_s": mc.dwell_s, "final_window_s": mc.final_window_s,
         "true_offset": true_m, "estimated_offset": est_m, "saturation": sat,
         "bias_of_estimate_ns": (est_m["bias_final_ns"] - true_m["bias_final_ns"])

@@ -200,6 +200,15 @@ def get_path(cfg: Any, dotted: str) -> Any:
     return obj
 
 
+def default_scenario() -> SimConfig:
+    """Deterministic scenario used by the GUI/CLI/benchmarks: 100 us initial offset, +20 ppm oscillator,
+    Sync 0.25 s, Delay_Req 2 s, symmetric 1 us network, ideal actuator, baseline PI (0.7, 0.3)."""
+    c = SimConfig()
+    c.oscillator.initial_offset_ns = 100_000.0
+    c.oscillator.freq_error_ppb = 20_000.0
+    return c
+
+
 def noisy_preset() -> SimConfig:
     """Scenario with the disturbances described in CLAUDE.md: tens-of-us send jitter on all
     messages, small path jitter and timestamp noise.  Deterministic for a given seed."""

@@ -132,3 +132,22 @@ See the README and the docstring of `ptpsim/metrics.py` for the exact definition
 | NXP arithmetic vs C | `tests/test_c_reference.py` |
 | jitter distribution, seeds | `test_jitter_distributions`, `test_stream_value_depends_only_on_index...`, `test_same_exogenous_disturbances_for_different_controllers` |
 | firmware baseline vs firmware code | `test_c_reference.py` (PI, conversions), `test_matches_discrete_closed_loop_recursion_exactly`, lock/outlier tests |
+
+## 9. 24 MHz versus the hardware figure of PR #121108
+
+`python scripts/nxp_root_sweep.py` (noisy preset, baseline PI, 5 seeds): median |true offset| [ns], last 200 s.
+
+| clock root | 0 ppm | 0.001 ppm | 0.003 ppm | 0.01 ppm | 0.03 ppm | 0.1 ppm | 0.5 ppm | 2 ppm | 20 ppm |
+|---|---|---|---|---|---|---|---|---|---|
+| 24 MHz | 0 | 200 | 733 | 2741 | 6616 | 3496 | 4017 | 3739 | 2953 |
+| 98.304 MHz | 158 | 153 | 150 | 157 | 154 | 157 | 159 | 161 | 162 |
+| 100 MHz | 159 | 159 | 159 | 159 | 159 | 159 | 159 | 159 | 158 |
+| 196.608 MHz | 159 | 156 | 157 | 155 | 154 | 150 | 156 | 162 | 154 |
+| PR #121108 (hardware) | 24 MHz: 236 | 98.304 MHz: 181 | 100 MHz: 144 | 196.608 MHz: 152 |
+
+At 24 MHz the nominal pair (INC 41 / INC_CORR 43 / ATCOR 2) realises the nominal rate exactly, and the nearest other
+reachable rates are ±63 ppm away, so with any non-zero oscillator error the servo alternates between them. In the
+model the median offset exceeds the 236 ns of the PR text above ≈ 0.002 ppm of relative frequency error. The other
+three roots give the same ≈ 155 ns whatever the error (their rate resolution is fine; the level is set by the
+noise of the preset, not by the hardware), i.e. close to the 144–181 ns reported on hardware — a coincidence of the
+preset, not a validation. Open question for the author of the measurement: relative frequency error, shared reference?

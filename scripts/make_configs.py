@@ -2,16 +2,13 @@
 """Regenerate the example scenario files in configs/ (python scripts/make_configs.py)."""
 from pathlib import Path
 
-from ptpsim.config import SimConfig, noisy_preset
+from ptpsim.config import SimConfig, default_scenario, noisy_preset
 
 OUT = Path(__file__).resolve().parent.parent / "configs"
 
 
 def base() -> SimConfig:
-    c = SimConfig()
-    c.oscillator.initial_offset_ns = 100_000.0
-    c.oscillator.freq_error_ppb = 20_000.0
-    return c
+    return default_scenario()
 
 
 def main():
@@ -22,7 +19,7 @@ def main():
         "variant_pi_time_aware": base().with_overrides(**{
             "controller.name": "pi_time_aware",
             "controller.params": {"wn": 1.0, "zeta": 1.0, "sat_ppb": 400000.0, "wn_ts_max": 0.35}}),
-        "sync_1s_delay_8s": base().with_overrides(**{"intervals.sync_log": 0, "intervals.delay_log": 3,
+        "sync_1s_delay_4s": base().with_overrides(**{"intervals.sync_log": 0, "intervals.delay_log": 2,
                                                       "duration_s": 600.0}),
         "every_8_sync_mode": base().with_overrides(**{"intervals.delay_mode": "every_n_sync",
                                                        "intervals.delay_every_n": 8}),

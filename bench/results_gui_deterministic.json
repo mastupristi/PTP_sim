@@ -2,16 +2,16 @@
   "scenario": "deterministic",
   "trials": 40,
   "latency_ms": {
-    "median": 124.55848299941863,
-    "p95": 149.70546199765522,
-    "max": 152.8490589989815,
-    "min": 119.44108399984543
+    "median": 123.74602850104566,
+    "p95": 143.749378999928,
+    "max": 145.75402699847473,
+    "min": 118.09358199752751
   },
-  "worker_compute_ms_median": 35.70546300034039,
-  "sim_ms_median": 30.390618994715624,
-  "debounce_ms": 80,
-  "gui_thread_max_gap_ms": 62.96794299851172,
-  "gui_thread_p99_gap_ms": 52.05977500008885,
+  "worker_compute_ms_median": 35.99444649989891,
+  "sim_ms_median": 30.278850499598775,
+  "debounce_ms": 40,
+  "gui_thread_max_gap_ms": 80.93359900158248,
+  "gui_thread_p99_gap_ms": 74.39137300025322,
   "machine": {
     "python": "3.14.4",
     "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.43",
