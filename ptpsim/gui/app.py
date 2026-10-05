@@ -112,6 +112,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._last_draw = 0.0
         self.evt_lines: list = []
         self.trans_lines: list = []
+        self.lim_lines: list = []            # horizontal limit lines of the PI-terms plot
 
         if start_worker:
             self._start_worker()
@@ -194,6 +195,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ctrl_rows.clear()
         self.evt_lines.clear()
         self.trans_lines.clear()
+        self.lim_lines.clear()
         self.setWindowTitle(T("title"))
         split = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         self.setCentralWidget(split)
@@ -276,6 +278,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ctrl_note.setWordWrap(True)
         self.ctrl_note.setStyleSheet("color: gray")
         grid.addWidget(self.ctrl_note, 99, 0, 1, 3)
+        lay.addWidget(g)
+        g, grid = self._group(T("g_fw"))
+        self._row("fw_clamp", grid, 0, "fw_clamp", ["firmware.cmd_clamp_ppm"], 0.0, 50_000.0,
+                  c.firmware.cmd_clamp_ppm, 100.0, decimals=1, suffix="ppm", tip_key="fw_clamp_tip")
+        self._row("fw_step", grid, 1, "fw_step", ["firmware.step_threshold_ns"], 1e-6, 1000.0,
+                  c.firmware.step_threshold_ns / 1e9, 0.1, decimals=6, suffix="s", scale=1e9, log=True,
+                  tip_key="fw_step_tip")
         lay.addWidget(g)
         lay.addStretch(1)
         self._build_ctrl_rows(c.controller.name, c.controller.params)
@@ -388,7 +397,10 @@ class MainWindow(QtWidgets.QMainWindow):
         right = QtWidgets.QWidget()
         rl = QtWidgets.QVBoxLayout(right)
         rl.setContentsMargins(4, 4, 4, 4)
+        # two toolbar rows: in one row the toolbar alone needed ~1450 px and forced the window beyond a
+        # 1920 px screen; row 1 = units, view, status, language; row 2 = what the plots show
         tb = QtWidgets.QHBoxLayout()
+        tb_show = QtWidgets.QHBoxLayout()
         tb.addWidget(QtWidgets.QLabel(T("units")))
         self.units = QtWidgets.QComboBox()
         self.units.addItems(list(UNITS))
@@ -397,18 +409,21 @@ class MainWindow(QtWidgets.QMainWindow):
         tb.addWidget(self.units)
         self.chk_overlay = QtWidgets.QCheckBox(T("overlay"))
         self.chk_overlay.toggled.connect(self._on_overlay_toggled)
-        tb.addWidget(self.chk_overlay)
+        tb_show.addWidget(self.chk_overlay)
         self.chk_est = QtWidgets.QCheckBox(T("show_est"))
         self.chk_est.setChecked(True)
         self.chk_est.toggled.connect(lambda *_: self._redraw())
-        tb.addWidget(self.chk_est)
+        tb_show.addWidget(self.chk_est)
         self.chk_diag = QtWidgets.QCheckBox(T("show_diag"))
         self.chk_diag.toggled.connect(self._on_diag_toggled)
-        tb.addWidget(self.chk_diag)
+        tb_show.addWidget(self.chk_diag)
+        self.chk_pi = QtWidgets.QCheckBox(T("show_pi"))
+        self.chk_pi.toggled.connect(self._on_pi_toggled)
+        tb_show.addWidget(self.chk_pi)
         self.chk_trans = QtWidgets.QCheckBox(T("show_trans"))
         self.chk_trans.setChecked(True)
         self.chk_trans.toggled.connect(lambda *_: self._update_transient_lines())
-        tb.addWidget(self.chk_trans)
+        tb_show.addWidget(self.chk_trans)
         tb.addWidget(QtWidgets.QLabel(T("view")))
         self.view_combo = QtWidgets.QComboBox()
         self.view_combo.addItems([T("view_full"), T("view_trans"), T("view_steady")])
@@ -417,9 +432,11 @@ class MainWindow(QtWidgets.QMainWindow):
         btn_fit = QtWidgets.QPushButton(T("btn_fit"))
         btn_fit.clicked.connect(self._autorange)
         tb.addWidget(btn_fit)
-        tb.addStretch(1)
         self.status = QtWidgets.QLabel(T("st_start"))
-        tb.addWidget(self.status)
+        # Ignored: the status text (its length changes with every message) never widens the window
+        self.status.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Preferred)
+        self.status.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        tb.addWidget(self.status, 1)
         tb.addWidget(QtWidgets.QLabel(T("lang")))
         self.lang_combo = QtWidgets.QComboBox()
         for code, name in LANGS.items():
@@ -428,20 +445,25 @@ class MainWindow(QtWidgets.QMainWindow):
         self.lang_combo.currentIndexChanged.connect(self._on_lang_changed)
         tb.addWidget(self.lang_combo)
         rl.addLayout(tb)
+        tb_show.addStretch(1)
+        rl.addLayout(tb_show)
 
         pg.setConfigOptions(antialias=False, background="w", foreground="k")
-        self.pw_delay, self.pw_off, self.pw_diag = pg.PlotWidget(), pg.PlotWidget(), pg.PlotWidget()
-        self.p_delay, self.p_off, self.p_diag = (w.getPlotItem() for w in (self.pw_delay, self.pw_off, self.pw_diag))
+        self.pw_delay, self.pw_off, self.pw_diag, self.pw_pi = (pg.PlotWidget() for _ in range(4))
+        self.p_delay, self.p_off, self.p_diag, self.p_pi = (w.getPlotItem() for w in (self.pw_delay, self.pw_off,
+                                                                                      self.pw_diag, self.pw_pi))
         self.p_off.setXLink(self.p_delay)
         self.p_diag.setXLink(self.p_delay)
-        for p in (self.p_delay, self.p_off, self.p_diag):
+        self.p_pi.setXLink(self.p_delay)
+        for p in (self.p_delay, self.p_off, self.p_diag, self.p_pi):
             p.showGrid(x=True, y=True, alpha=0.3)
             p.setMenuEnabled(True)
             p.getAxis("left").setWidth(78)                # aligned plot areas
             for ax in ("left", "bottom"):
                 p.getAxis(ax).enableAutoSIPrefix(False)     # explicit units only, no "x0.001" scaling
             p.getViewBox().setAutoVisible(y=True)           # y autorange follows the visible x range
-            p.addLegend(offset=(-10, 10))
+            # the PI panel is short: its 4 entries go in 2 columns so the legend is not cut
+            p.addLegend(offset=(-10, 10), colCount=2 if p is self.p_pi else 1)
         self.p_delay.setTitle(T("pl_delay"))
         self.p_off.setTitle(T("pl_off"))
         self.p_diag.setTitle(T("pl_diag"))
@@ -449,6 +471,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.p_diag.setLabel("bottom", T("ax_time"))
         self.p_diag.setLabel("left", "ppb")
         self.pw_diag.setVisible(False)
+        self.p_pi.setTitle(T("pl_pi"))
+        self.p_pi.setLabel("bottom", T("ax_time"))
+        self.p_pi.setLabel("left", T("ax_pi"))
+        self.pw_pi.setVisible(False)
         pen = lambda col, w=1.5, st=None: pg.mkPen(col, width=w, style=st or QtCore.Qt.SolidLine)
         self.cv = {
             "delay_step": self.p_delay.plot(pen=pen(C_DELAY, 1.5), name=T("lg_delay_step")),
@@ -462,14 +488,22 @@ class MainWindow(QtWidgets.QMainWindow):
             "base_est": self.p_off.plot(pen=pen(C_BASE, 1.0, QtCore.Qt.DotLine), name=T("lg_base_est")),
             "rate_cmd": self.p_diag.plot(pen=pen(C_EST, 1.5), name=T("lg_cmd")),
             "rate_eff": self.p_diag.plot(pen=pen(C_TRUE, 1.5), name=T("lg_eff")),
+            # PI terms: colour AND line style/width tell the curves apart
+            "pi_p": self.p_pi.plot(pen=pen(C_EST, 1.5, QtCore.Qt.DashLine), name=T("lg_p")),
+            "pi_i": self.p_pi.plot(pen=pen(C_TRUE, 2.0), name=T("lg_i")),
+            "pi_out": self.p_pi.plot(pen=pen(C_REF, 1.0), name=T("lg_out")),
+            "pi_applied": self.p_pi.plot(pen=pen(C_DELAY, 2.5), name=T("lg_applied")),
         }
+        # the thin output (= P + I for the PI laws) goes behind I and P, otherwise it hides them
+        for z, k in enumerate(("pi_out", "pi_applied", "pi_i", "pi_p")):
+            self.cv[k].setZValue(z)
         for k in ("true", "base_true"):
             self.cv[k].setDownsampling(auto=True, method="peak")
             self.cv[k].setClipToView(True)
         plots = QtWidgets.QSplitter(QtCore.Qt.Vertical)
-        for w in (self.pw_delay, self.pw_off, self.pw_diag):
+        for w in (self.pw_delay, self.pw_off, self.pw_diag, self.pw_pi):
             plots.addWidget(w)
-        plots.setSizes([300, 420, 180])
+        plots.setSizes([300, 420, 180, 240])
         plots.setChildrenCollapsible(False)
         self.plots_split = plots
 
@@ -546,6 +580,8 @@ class MainWindow(QtWidgets.QMainWindow):
             mean, asym = self.rows["d_mean"].config_value(), self.rows["d_asym"].config_value()
             out = {"network.delay_ms_ns": mean + asym / 2, "network.delay_sm_ns": mean - asym / 2,
                    "network.delay_asymmetry_ns": 0.0}
+        if row is self.rows.get("fw_step"):              # an integer number of ns, as in clock.c
+            out = {"firmware.step_threshold_ns": int(round(v))}
         return out
 
     def _all_overrides(self) -> dict:
@@ -610,7 +646,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 "net_jit": c.network.jitter_ms.scale_ns, "tx_jit": c.tx_jitter.sync.scale_ns,
                 "lat_fup": c.latency.follow_up_ns, "lat_dresp": c.latency.delay_resp_ns, "lat_cmd": c.latency.command_ns,
                 "lat_step": c.latency.step_ns,
-                "ts_noise": c.timestamps.gm_noise_sigma_ns, "gm_q": c.timestamps.gm_quantum_ns, "loss": c.loss.sync}
+                "ts_noise": c.timestamps.gm_noise_sigma_ns, "gm_q": c.timestamps.gm_quantum_ns, "loss": c.loss.sync,
+                "fw_clamp": c.firmware.cmd_clamp_ppm, "fw_step": c.firmware.step_threshold_ns}
         for k, v in vals.items():
             self.rows[k].set_config_value(v)
         for w, fn in ((self.delay_mode, lambda: self.delay_mode.setCurrentIndex(0 if c.intervals.delay_mode == "interval" else 1)),
@@ -739,7 +776,23 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_diag_toggled(self, on):
         self.pw_diag.setVisible(on)
+        if on:
+            self._share_plot_height()
         self._redraw()
+
+    def _on_pi_toggled(self, on):
+        self.pw_pi.setVisible(on)
+        if on:
+            self._share_plot_height()
+        self._redraw()
+
+    def _share_plot_height(self):
+        """Split the plot column among the plots that are switched on (the splitter handles still resize them).
+
+        Without this a plot shown after another one gets only the splitter's minimum height."""
+        total = sum(self.plots_split.sizes())
+        weights = [2, 3, 2 if self.chk_diag.isChecked() else 0, 3 if self.chk_pi.isChecked() else 0]
+        self.plots_split.setSizes([int(total * w / sum(weights)) for w in weights])
 
     def _on_mode_toggled(self, explore_on: bool):
         self.mode = "explore" if explore_on else "live"
@@ -799,7 +852,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def glw_repaint(self):
         """Paint now, so the measured latency includes the rendering."""
-        for w in (self.pw_delay, self.pw_off, self.pw_diag):
+        for w in (self.pw_delay, self.pw_off, self.pw_diag, self.pw_pi):
             if w.isVisible():
                 w.viewport().repaint()
 
@@ -856,7 +909,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.live_t = target
 
     def _ingest_live(self, delta: dict):
-        keys = ("true_t", "true_x", "est_t", "est_x", "delay_t", "delay_x", "rate_t", "rate_cmd", "rate_eff")
+        keys = ("true_t", "true_x", "est_t", "est_x", "delay_t", "delay_x", "rate_t", "rate_cmd", "rate_eff",
+                "pi_t", "pi_p", "pi_i", "pi_out")
         for key, d in delta.items():
             b = self.live_buf.setdefault(key, {k: np.empty(0) for k in keys})
             for k in keys:
@@ -866,6 +920,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         b[k] = b[k][-MAX_LIVE_POINTS:]
             b["t_now"] = d["t_now"]
             b["delay_nominal"] = d["delay_nominal"]
+            b["limits"] = d["limits"]                 # current limits (they can change live)
             b.setdefault("changes", [])
             b.setdefault("events", [])
             b["changes"] += d["changes"]
@@ -896,7 +951,8 @@ class MainWindow(QtWidgets.QMainWindow):
         return {"t_end": b["t_now"], "true_t": b["true_t"], "true_x": b["true_x"], "est_t": b["est_t"],
                 "est_x": b["est_x"], "delay_t": b["delay_t"], "delay_x": b["delay_x"], "delay_nominal": b["delay_nominal"],
                 "rate_t": b["rate_t"], "rate_cmd": b["rate_cmd"], "rate_eff": b["rate_eff"],
-                "events": b["events"], "changes": b["changes"]}
+                "pi_t": b["pi_t"], "pi_p": b["pi_p"], "pi_i": b["pi_i"], "pi_out": b["pi_out"],
+                "limits": b["limits"], "events": b["events"], "changes": b["changes"]}
 
     # ------------------------------------------------------------------ drawing
     def _clear_plots(self):
@@ -906,6 +962,7 @@ class MainWindow(QtWidgets.QMainWindow):
             p.removeItem(ln)
         self.evt_lines.clear()
         self.trans_lines.clear()
+        self._remove_limit_lines()
         self.table.setRowCount(0)
         self.table.setFixedHeight(self.table.horizontalHeader().height() + 2)
 
@@ -943,6 +1000,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.chk_diag.isChecked():
             self.cv["rate_cmd"].setData(*step_xy(r["rate_t"], r["rate_cmd"], r["t_end"]))
             self.cv["rate_eff"].setData(*step_xy(r["rate_t"], r["rate_eff"], r["t_end"]))
+        self._draw_pi_terms(r)
         for p, ln in self.evt_lines:
             p.removeItem(ln)
         self.evt_lines.clear()
@@ -961,6 +1019,40 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.evt_lines.append((self.p_off, ln))
         self._update_transient_lines()
 
+    def _remove_limit_lines(self):
+        for ln in self.lim_lines:
+            self.p_pi.removeItem(ln)
+        self.lim_lines.clear()
+
+    def _draw_pi_terms(self, r):
+        """PI-terms plot (ppm): P, I and controller output at each servo update (steps and rejected
+        outliers have no update, so no point), the command actually applied (held, includes the clamp
+        and the resets to nominal) and horizontal lines at the active limits.  Skipped while hidden."""
+        self._remove_limit_lines()
+        if not self.chk_pi.isChecked():
+            return
+        k = 1e-3                                         # ppb -> ppm
+        self.cv["pi_p"].setData(r["pi_t"], r["pi_p"] * k)
+        self.cv["pi_i"].setData(r["pi_t"], r["pi_i"] * k)
+        self.cv["pi_out"].setData(r["pi_t"], r["pi_out"] * k)
+        self.cv["pi_applied"].setData(*step_xy(r["rate_t"], r["rate_cmd"] * k, r["t_end"]))
+        limits = r.get("limits", {})
+        # each kind has its own label position along the line: close limits must not overprint
+        for key, text_key, col, style, label_pos in (
+                ("actuator", "lim_act", C_EVT, QtCore.Qt.DashDotLine, 0.04),
+                ("clamp", "lim_clamp", C_EVT, QtCore.Qt.DashLine, 0.20),
+                ("i_max", "lim_imax", C_TRUE, QtCore.Qt.DashLine, 0.36),
+                ("sat", "lim_sat", C_REF, QtCore.Qt.DashLine, 0.52)):
+            v = limits.get(key, 0.0)
+            if v <= 0.0:
+                continue
+            for sign in (1.0, -1.0):
+                ln = pg.InfiniteLine(pos=sign * v, angle=0, pen=pg.mkPen(col, width=1, style=style),
+                                     label=T(text_key, v=v) if sign > 0 else None,
+                                     labelOpts={"position": label_pos, "color": col})
+                self.p_pi.addItem(ln, ignoreBounds=True)  # limits must not drive the y autorange
+                self.lim_lines.append(ln)
+
     def _update_transient_lines(self):
         """Dashed vertical line at the end of the transient (settling time) on every plot."""
         for p, ln in self.trans_lines:
@@ -971,7 +1063,8 @@ class MainWindow(QtWidgets.QMainWindow):
         items = [(self.metrics, C_TRANS, "tr_line", 0.5)]
         if self.chk_overlay.isChecked():
             items.append((self.base_metrics, C_BASE, "tr_line_base", 0.2))
-        plots = [self.p_delay, self.p_off] + ([self.p_diag] if self.chk_diag.isChecked() else [])
+        plots = [self.p_delay, self.p_off] + ([self.p_diag] if self.chk_diag.isChecked() else []) \
+            + ([self.p_pi] if self.chk_pi.isChecked() else [])
         for mm, col, key, pos in items:
             ts = None if mm is None else mm["true_offset"]["settling_s"]
             if ts is None:
@@ -987,14 +1080,14 @@ class MainWindow(QtWidgets.QMainWindow):
         if r is None:
             return
         if self.mode == "live":
-            for p in (self.p_delay, self.p_off, self.p_diag):
+            for p in (self.p_delay, self.p_off, self.p_diag, self.p_pi):
                 p.enableAutoRange(axis="x")
         else:
             self.view_combo.blockSignals(True)
             self.view_combo.setCurrentIndex(0)
             self.view_combo.blockSignals(False)
             self.p_delay.setXRange(0, max(1e-3, r["t_end"]), padding=0.01)
-        for p in (self.p_off, self.p_delay, self.p_diag):
+        for p in (self.p_off, self.p_delay, self.p_diag, self.p_pi):
             p.enableAutoRange(axis="y")
 
     def _apply_view(self):
@@ -1017,7 +1110,7 @@ class MainWindow(QtWidgets.QMainWindow):
             lo = ts if ts is not None else (ss if ss is not None else 0.0)
             hi = t_end
         self.p_delay.setXRange(lo, max(hi, lo + 1e-3), padding=0.01)
-        for p in (self.p_off, self.p_delay, self.p_diag):
+        for p in (self.p_off, self.p_delay, self.p_diag, self.p_pi):
             p.enableAutoRange(axis="y")
 
     # ------------------------------------------------------------------ tables

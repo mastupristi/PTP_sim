@@ -24,12 +24,14 @@ def export_result(res: SimResult, out_dir: str | Path, dense_dt_s: float = 0.01,
     with open(out / "servo_samples.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["t_sample_s", "t_processed_s", "offset_est_ns", "offset_true_at_t2_ns",
-                    "offset_true_at_processing_ns", "cmd_ppb", "integral", "action"])
+                    "offset_true_at_processing_ns", "cmd_ppb", "integral", "action",
+                    "cmd_applied_ppb", "p_ppb"])
         for i in range(res.servo_t_proc_s.size):
             w.writerow([f"{res.servo_t_sample_s[i]:.9f}", f"{res.servo_t_proc_s[i]:.9f}",
                         f"{res.servo_offset_est_ns[i]:.0f}", f"{res.servo_offset_true_ns[i]:.4f}",
                         f"{res.servo_offset_true_proc_ns[i]:.4f}", f"{res.servo_cmd_ppb[i]:.6f}",
-                        f"{res.servo_integral[i]:.6f}", ACTIONS[int(res.servo_action[i])]])
+                        f"{res.servo_integral[i]:.6f}", ACTIONS[int(res.servo_action[i])],
+                        f"{res.servo_cmd_applied_ppb[i]:.6f}", f"{res.servo_p_ppb[i]:.6f}"])
     with open(out / "delay_samples.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["t_processed_s", "delay_est_ns", "delay_true_exchange_ns", "delay_true_nominal_ns"])

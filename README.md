@@ -41,7 +41,7 @@ Headless GUI check: `QT_QPA_PLATFORM=offscreen python bench/gui_latency.py`.
 |---|---|
 | `ptpsim/engine.py` | discrete-event engine: GM, network, slave firmware model, slave clock, results |
 | `ptpsim/fwport.py` | bit-faithful ports of the PI, ppb→scaled-ppm→ratio, NXP `find_correction`, ENET timer model |
-| `ptpsim/controllers.py` | controller interface, **baseline_pi** (firmware PI), **pi_time_aware** (variant) |
+| `ptpsim/controllers.py` | controller interface, **baseline_pi** (firmware PI), **pi_time_aware** (variant), **pi_anti_windup** (firmware PI + integrator limit) |
 | `ptpsim/actuators.py`, `clock.py` | ideal / NXP actuators; piecewise-linear slave clock |
 | `ptpsim/rng.py` | disturbance streams indexed by message sequence number (reproducible seeds) |
 | `ptpsim/metrics.py`, `export.py`, `compare.py`, `analysis.py`, `cli.py` | metrics, CSV/JSON export, comparison, analytic loop model, CLI |
@@ -63,10 +63,13 @@ processing, command application, oscillator updates. Highlights (details in [doc
   drift/random walk; phase is continuous across rate changes; steps only from the firmware's own `clock_step`.
 * `t1`,`t4` GM domain; `t2`,`t3` slave clock evaluated at the physical instant of the event, **before** the
   Follow_Up/Delay_Resp is received. Sync/Follow_Up pairing slot, Delay_Req list, "latest t1/t2" delay estimate,
-  `mean_delay == 0` servo skip, 1 s step, lock / outlier / reset logic and the stale-Delay_Resp-after-step quirk
+  `mean_delay == 0` servo skip, 1 s step (`SYNC_SERVO_STEP_THRESHOLD_NS`; the threshold is a parameter,
+  `firmware.step_threshold_ns`), lock / outlier / reset logic and the stale-Delay_Resp-after-step quirk
   are reproduced as found in the code.
 * PI: `integral += ki*e; ppb = kp*e + integral`, `e = -offset[ns]`, **absolute** output, no dt; ppb→scaled ppm
   (truncation)→rate ratio; out-of-window requests are rejected by the driver and trigger `clock_servo_reset()`.
+  An **experimental command clamp** (`firmware.cmd_clamp_ppm`, **not in the firmware**, off by default) saturates the
+  command instead; the firmware PI has no anti-windup, so its integrator then winds up.
 * Delay_Req timing: first request uniform in (0, 2·2ⁿ] s, then period 2ⁿ s from a **monotonic, undisciplined timer**
   (`k_timer`) with its own configurable rate error. The firmware has no "every N Sync" mode: it is provided as an
   explicitly labelled non-firmware option.
@@ -126,7 +129,12 @@ Findings (model predictions, with the evidence in the tests/results):
    stable with exact delay, resets forever with the estimated one). A hypothesis to check on hardware.
 4. **Large initial offsets:** between ≈ 50 ms and 1 s the PI is not clamped: its first output is (kp+ki)·offset, so it asks for > 50 000 ppm and the NXP
    driver rejects it → `clock_servo_reset()` loop (the 100 ms outlier rule only applies after lock); beyond 1 s the
-   forced alignment (`clock_step`) takes over.
+   forced alignment (`clock_step`) takes over. Clamping the command (experimental option) removes the reset loop but,
+   with no anti-windup, the baseline integrator winds up: from 100 ms with a 1000 ppm clamp it reaches ≈ 6×10⁶ ppm and
+   the offset overshoots to ≈ −100 ms. `pi_anti_windup` (same law, integrator limited to ±`i_max_ppm`) at 100 ppm
+   settles with ≈ 44 µs of overshoot (scenario of `test_integrator_limit_bounds_the_windup_and_the_overshoot`,
+   ideal actuator, 20 ppm oscillator error); the limit must stay above the steady frequency
+   correction (oscillator error + drift), otherwise a residual offset `(error − i_max)/kp` remains.
 5. **24 MHz clock root (INC = 41):** the reachable average rates near ratio 1.0 are ≈ 63 ppm apart (table in
    [docs/model.md](docs/model.md)), so any oscillator error is realised by dithering between the nominal pair and a
    neighbour 63 ppm away. In the model the median |offset| at 24 MHz exceeds the 236 ns reported on hardware in the
@@ -141,16 +149,23 @@ User manual, every parameter explained: **[English](docs/manual.en.md) · [Itali
 Interface language: English (default) or Italian (selector top right, `--lang en|it`; remembered).
 
 Controls are grouped in **tabs** (Run, Controller, PTP intervals, Scenario, Network and noise, Actuator); the right side is
-the toolbar, three plots sharing the time axis (**Delay**: firmware estimate held between samples with sample markers and the
-physical reference; **Offset**: estimated, true, optional baseline overlay; optional **rate diagnostics**), which take all the
-available height, and the metrics table, always fully visible. Units ns/µs/ms, zoom/pan, legends.
+the toolbar, plots sharing the time axis (**Delay**: firmware estimate held between samples with sample markers and the
+physical reference; **Offset**: estimated, true, optional overlay of the **unmodified firmware**; optional **rate
+diagnostics**; optional **PI terms**), which take all the available height, and the metrics table, always fully visible.
+Units ns/µs/ms, zoom/pan, legends.
+
+* **PI terms** plot (ppm): P = kp·e, the integrator I and the controller output at every servo update, the command applied
+  to the clock (held), and lines at the active limits (actuator, command clamp, integrator limit, controller limit) — to
+  size an anti-windup limit.
+* **Firmware servo** options (Controller tab): experimental **command clamp** in ppm (0 = off = firmware) and the
+  **step threshold** (1 s in the firmware). The baseline overlay always keeps the unmodified firmware values.
 
 * **Metrics table:** transient end (settling), overshoot, peak, and the **steady-state statistics — median, min, max,
   median |x|, RMS, mean** — for the true and the estimated offset (and the baseline), the delay estimate's median/min/max,
   saturation counters, timing.
 * **Transient end** is also drawn as a dashed vertical line on the plots, and a **View** selector switches between the full
   run, the transient and the steady state (the y axis follows the visible data).
-* **Initial offset up to ±2×10⁹ s** with a *"Slave PHC starts at 0"* button: offsets beyond 1 s trigger the firmware's
+* **Initial offset up to ±2×10⁹ s** with a *"Slave PHC starts at 0"* button: offsets beyond the step threshold (1 s) trigger the firmware's
   forced alignment (`clock_step`, see below), reproduced with exact integer arithmetic.
 * **Exploration:** any change recomputes the whole trajectory from the same initial conditions and seed.
 * **Live:** the trajectory continues; new parameters apply from the current instant (dashed marker on the plots);
@@ -162,7 +177,9 @@ available height, and the metrics table, always fully visible. Units ns/µs/ms, 
   (`pyqtgraph` peak-mode) — metrics use the full data.
 * Measured reactivity (offscreen Qt, software rendering, 300 s scenario, **from the parameter change to the end of the
   repaint**, 40 trials): default deterministic **median 135 ms, p95 159 ms**; NXP actuator 187 / 195 ms; baseline overlay
-  187 / 194 ms ([`bench/results_gui_*.json`](bench)). The engine alone takes 29 ms (ideal) / 77 ms (NXP) for 300 s
+  187 / 194 ms ([`bench/results_gui_*.json`](bench)). The optional PI-terms plot adds ≈ 11 ms: in one later session the
+  default scenario measured 106 / 140 ms without it and 118 / 148 ms with it shown
+  ([`bench/results_gui_pi_terms.json`](bench/results_gui_pi_terms.json)). The engine alone takes 29 ms (ideal) / 77 ms (NXP) for 300 s
   ([`bench/results_engine.json`](bench/results_engine.json)); no JIT was needed. The *calculation* never blocks the GUI
   (separate process), but each redraw occupies the GUI thread for ≈ 85–115 ms (p99 of a 5 ms heartbeat gap, mostly
   pyqtgraph axis/grid painting). A real display may differ from the offscreen figures.
@@ -192,6 +209,7 @@ RMS and bias on a configurable final window, saturation/reset counters, divergen
 | PR #121108 ztest cases (ATCOR = period−1, closer neighbour, sweeps) | ported in the same file | ✔ verified |
 | Closed loop = analytic recursion | exact-delay run vs recursion, < 1e-3 ns | ✔ verified |
 | Identical clocks, offset only, frequency error, phase continuity, t2/t3 before FUP/Resp, pairing, rate change between t2 and t3, ordering, asymmetry bias, saturation/anti-windup, interval changes, 1e6 s precision, jitter distribution/seeds | `tests/test_engine.py`, `tests/test_units.py` | ✔ verified |
+| Command clamp (off = firmware, NaN not clamped, exact at the actuator limit), step threshold, `pi_anti_windup` (0 = baseline bit-identical, windup bound, residual below the steady correction), P/I recording, unmodified-firmware overlay | `tests/test_servo_options.py` | ✔ verified (model only) |
 | Baseline vs **hardware** | no real logs available | ✘ **not validated** |
 | Log importer / replay | needs the real instrumentation format (not in any branch) | ✘ not implemented |
 

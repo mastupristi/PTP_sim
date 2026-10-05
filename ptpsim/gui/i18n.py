@@ -84,6 +84,23 @@ STRINGS: dict[str, dict] = {
     "pd_wn_ts_max": _s("max wn·dt [rad] (stability guard, kp·dt < 2)", "max wn·dt [rad] (guardia di stabilità, kp·dt < 2)"),
     "pd_dt_clamp": _s("measured dt is clamped to dt_clamp × nominal interval",
                       "il dt misurato è limitato a dt_clamp × intervallo nominale"),
+    "pd_i_max_ppm": _s("integrator limit [ppm] (0 = off, identical to baseline_pi); must exceed the steady frequency "
+                       "correction (oscillator error + drift)",
+                       "limite dell'integratore [ppm] (0 = off, identico a baseline_pi); deve superare la correzione di "
+                       "frequenza a regime (errore oscillatore + deriva)"),
+    "g_fw": _s("Firmware servo (clock.c)", "Servo del firmware (clock.c)"),
+    "fw_clamp": _s("Command clamp (0 = off)", "Clamp del comando (0 = off)"),
+    "fw_clamp_tip": _s("NOT in the firmware. Saturates the servo command to ± this value before the driver; 0 = firmware "
+                       "behaviour (a command beyond the actuator limit is rejected and the servo is reset). The PI "
+                       "integrator is not told: it winds up unless the controller limits it.",
+                       "NON nel firmware. Satura il comando del servo a ± questo valore prima del driver; 0 = "
+                       "comportamento del firmware (un comando oltre il limite dell'attuatore è rifiutato e il servo "
+                       "si azzera). L'integratore del PI non lo sa: va in windup se il controllore non lo limita."),
+    "fw_step": _s("Step threshold |offset|", "Soglia di step |offset|"),
+    "fw_step_tip": _s("Above this |offset| the firmware steps the clock (forced alignment) and resets the servo. "
+                      "Firmware: 1 s (SYNC_SERVO_STEP_THRESHOLD_NS, clock.c:50).",
+                      "Oltre questo |offset| il firmware fa uno step del clock (riallineamento forzato) e azzera il "
+                      "servo. Firmware: 1 s (SYNC_SERVO_STEP_THRESHOLD_NS, clock.c:50)."),
     # --- intervals
     "g_int": _s("PTP intervals (1 s × 2ⁿ)", "Intervalli PTP (1 s × 2ⁿ)"),
     "sync_n": _s("Sync: exponent n", "Sync: esponente n"),
@@ -104,10 +121,12 @@ STRINGS: dict[str, dict] = {
     # --- scenario
     "g_init": _s("Initial conditions / duration", "Condizioni iniziali / durata"),
     "off0": _s("Initial offset", "Offset iniziale"),
-    "off0_tip": _s("slave − GM at t = 0, up to ±2e9 s. Beyond 1 s the firmware steps the clock (forced alignment); "
-                   "above ≈50 ms the baseline PI asks > 50000 ppm and the driver rejects it (servo reset).",
-                   "slave − GM a t = 0, fino a ±2e9 s. Oltre 1 s il firmware fa uno step del clock (riallineamento "
-                   "forzato); oltre ≈50 ms il PI baseline chiede > 50000 ppm e il driver rifiuta (reset del servo)."),
+    "off0_tip": _s("slave − GM at t = 0, up to ±2e9 s. Beyond the step threshold (1 s in the firmware, Controller tab) "
+                   "the firmware steps the clock (forced alignment); above ≈50 ms the baseline PI asks > 50000 ppm "
+                   "and the driver rejects it (servo reset), unless the command clamp is on.",
+                   "slave − GM a t = 0, fino a ±2e9 s. Oltre la soglia di step (1 s nel firmware, scheda Controllore) "
+                   "il firmware fa uno step del clock (riallineamento forzato); oltre ≈50 ms il PI baseline chiede "
+                   "> 50000 ppm e il driver rifiuta (reset del servo), a meno che il clamp del comando sia attivo."),
     "btn_phc0": _s("Slave PHC starts at 0 (offset = −epoch)", "PHC slave parte da 0 (offset = −epoch)"),
     "freq0": _s("Frequency error", "Errore di frequenza"),
     "duration": _s("Duration", "Durata"),
@@ -147,9 +166,10 @@ STRINGS: dict[str, dict] = {
                        "NXP: INC={inc}  INC_CORR={ic}  ATCOR={cor}  (ratio effettivo {r:.9f})"),
     # --- toolbar
     "units": _s("Units:", "Unità:"),
-    "overlay": _s("Overlay baseline (firmware PI)", "Sovrapponi baseline (PI firmware)"),
+    "overlay": _s("Overlay baseline (unmodified firmware)", "Sovrapponi baseline (firmware non modificato)"),
     "show_est": _s("Estimated offset", "Offset stimato"),
     "show_diag": _s("Rate diagnostics", "Diagnostica rate"),
+    "show_pi": _s("PI terms", "Termini PI"),
     "view": _s("View:", "Vista:"),
     "view_full": _s("Full", "Completa"),
     "view_trans": _s("Transient", "Transitorio"),
@@ -171,6 +191,9 @@ STRINGS: dict[str, dict] = {
     "pl_delay": _s("Mean delay (firmware estimate vs physical reference)", "Delay medio (stima del firmware vs riferimento fisico)"),
     "pl_off": _s("Offset slave − GM", "Offset slave − GM"),
     "pl_diag": _s("Rate: commanded by the servo and effective of the clock", "Rate: comandato dal servo e effettivo del clock"),
+    "pl_pi": _s("Controller terms at each servo update and command applied to the clock",
+                "Termini del controllore a ogni aggiornamento del servo e comando applicato al clock"),
+    "ax_pi": _s("ppm", "ppm"),
     "ax_time": _s("physical (GM) time [s]", "tempo fisico (GM) [s]"),
     "ax_off": _s("offset [{u}]", "offset [{u}]"),
     "ax_delay": _s("delay [{u}]", "delay [{u}]"),
@@ -183,6 +206,14 @@ STRINGS: dict[str, dict] = {
     "lg_base_est": _s("baseline: estimated offset", "baseline: offset stimato"),
     "lg_cmd": _s("commanded (ppb)", "comandato (ppb)"),
     "lg_eff": _s("effective clock rate vs GM (ppb)", "rate effettivo clock vs GM (ppb)"),
+    "lg_p": _s("P = kp·e", "P = kp·e"),
+    "lg_i": _s("I (integrator)", "I (integratore)"),
+    "lg_out": _s("controller output (P + I, before the clamp)", "uscita controllore (P + I, prima del clamp)"),
+    "lg_applied": _s("command applied (held)", "comando applicato (mantenuto)"),
+    "lim_act": _s("actuator limit ±{v:g} ppm", "limite attuatore ±{v:g} ppm"),
+    "lim_clamp": _s("command clamp ±{v:g} ppm", "clamp comando ±{v:g} ppm"),
+    "lim_imax": _s("integrator limit ±{v:g} ppm", "limite integratore ±{v:g} ppm"),
+    "lim_sat": _s("controller limit ±{v:g} ppm", "limite controllore ±{v:g} ppm"),
     "tr_line": _s("transient ends {t:.2f} s", "fine transitorio {t:.2f} s"),
     "tr_line_base": _s("baseline: {t:.2f} s", "baseline: {t:.2f} s"),
     # --- table
@@ -236,4 +267,9 @@ STRINGS: dict[str, dict] = {
         "bandwidth guard wn·dt ≤ wn_ts_max, output clamp and anti-windup.",
         "PI sperimentale con tempo di campionamento esplicito: kp = 2ζ·wn, ki = wn² al secondo, dt misurato, "
         "guardia wn·dt ≤ wn_ts_max, limite sull'uscita e anti-windup."),
+    "cn_pi_anti_windup": _s(
+        "Firmware PI law (same per-update kp, ki, no dt) with the integrator clamped to ±i_max_ppm after each update: "
+        "bounds the windup while the command clamp saturates. i_max_ppm = 0: identical to baseline_pi.",
+        "Legge del PI firmware (stessi kp, ki per aggiornamento, senza dt) con l'integratore limitato a ±i_max_ppm dopo "
+        "ogni aggiornamento: limita il windup mentre il clamp del comando satura. i_max_ppm = 0: identico a baseline_pi."),
 }

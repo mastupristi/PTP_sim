@@ -8,9 +8,40 @@ from __future__ import annotations
 
 import numpy as np
 
-from .config import SimConfig
+from .config import FirmwareConfig, SimConfig
+from .controllers import REGISTRY
 from .engine import PS_PER_S, SimResult, Simulation
 from .metrics import MetricsConfig, compute_metrics, true_offset_grid
+
+
+def overlay_config(cfg: SimConfig) -> SimConfig | None:
+    """Reference run drawn by the baseline overlay: the unmodified firmware (baseline PI 0.7/0.3,
+    ``clock.c`` constants, no command clamp) on the same scenario and seed.
+
+    ``None`` when the main run already uses the baseline PI with unmodified firmware settings (the
+    overlay would add nothing, as before the firmware options existed)."""
+    if cfg.controller.name == "baseline_pi" and cfg.firmware == FirmwareConfig():
+        return None
+    b = cfg.with_overrides(**{"controller.name": "baseline_pi", "controller.params": {"kp": 0.7, "ki": 0.3}})
+    b.firmware = FirmwareConfig()
+    return b
+
+
+def command_limits(cfg: SimConfig) -> dict[str, float]:
+    """Limits drawn on the PI-terms plot, in ppm (0 = not active)."""
+    cls = REGISTRY[cfg.controller.name]
+    params = {k: v[0] for k, v in cls.PARAMS.items()}
+    params.update(cfg.controller.params)
+    return {"actuator": float(cfg.actuator.max_ratio_ppm),
+            "clamp": float(cfg.firmware.cmd_clamp_ppm),
+            "i_max": float(params.get("i_max_ppm", 0.0)),
+            "sat": float(params.get("sat_ppb", 0.0)) / 1000.0}
+
+
+def _pi_terms(t_proc, p_ppb, i_ppb, out_ppb) -> dict:
+    """P, I and controller output at the updates where the controller ran (not steps/outliers)."""
+    ran = np.isfinite(p_ppb)
+    return {"pi_t": t_proc[ran], "pi_p": p_ppb[ran], "pi_i": i_ppb[ran], "pi_out": out_ppb[ran]}
 
 
 def pack_result(res: SimResult, dense_dt_s: float | None = None) -> dict:
@@ -27,6 +58,8 @@ def pack_result(res: SimResult, dense_dt_s: float | None = None) -> dict:
         "delay_t": res.delay_t_proc_s, "delay_x": res.delay_est_ns,
         "delay_true_sample": res.delay_true_sample_ns, "delay_nominal": res.delay_true_nominal_ns,
         "rate_t": res.rate_t_s, "rate_cmd": res.rate_cmd_ppb, "rate_eff": res.rate_eff_ppb,
+        **_pi_terms(res.servo_t_proc_s, res.servo_p_ppb, res.servo_integral, res.servo_cmd_ppb),
+        "limits": command_limits(res.cfg),
         "events": [(t_, k) for (t_, k, _d) in res.events if k in ("step", "servo_reset", "locked")],
         "changes": list(res.changes), "counters": dict(res.counters),
         "wall_ms": res.wall_s * 1e3,
@@ -40,10 +73,10 @@ class LiveSession:
         self.dense_dt = dense_dt_s
         self.cfg = cfg.copy()
         self.sims: dict[str, Simulation] = {"main": Simulation(cfg)}
-        self.overlay = overlay and cfg.controller.name != "baseline_pi"
+        base_cfg = overlay_config(cfg) if overlay else None
+        self.overlay = base_cfg is not None
         if self.overlay:
-            self.sims["base"] = Simulation(cfg.with_overrides(**{"controller.name": "baseline_pi",
-                                                                  "controller.params": {"kp": 0.7, "ki": 0.3}}))
+            self.sims["base"] = Simulation(base_cfg)
         self._cursor: dict[str, dict] = {k: dict(servo=0, delay=0, rate=0, ev=0, ch=0, t_dense=0.0) for k in self.sims}
 
     @property
@@ -57,7 +90,8 @@ class LiveSession:
     def update(self, overrides: dict, policy: str) -> None:
         self.sims["main"].update_config(overrides, policy)
         if "base" in self.sims:
-            ov = {k: v for k, v in overrides.items() if not k.startswith("controller.")}
+            # the overlay stays the unmodified firmware: controller and firmware options are not forwarded
+            ov = {k: v for k, v in overrides.items() if not k.startswith(("controller.", "firmware."))}
             if ov:
                 self.sims["base"].update_config(ov, "keep")
 
@@ -69,6 +103,8 @@ class LiveSession:
             cur = self._cursor[key]
             n = len(sim._s_t_proc)
             t_samp = arr(sim._s_t_samp[cur["servo"]:n])
+            pi = _pi_terms(arr(sim._s_t_proc[cur["servo"]:n]), arr(sim._s_p[cur["servo"]:n]),
+                           arr(sim._s_int[cur["servo"]:n]), arr(sim._s_cmd[cur["servo"]:n]))
             est = arr(sim._s_off[cur["servo"]:n], dtype=np.float64)
             t_now = sim.now / PS_PER_S
             t_new = np.arange(cur["t_dense"], t_now, self.dense_dt)
@@ -86,6 +122,7 @@ class LiveSession:
                 "delay_nominal": (sim.cfg.network.delay_ms_ns + sim.cfg.network.delay_sm_ns) / 2.0,
                 "rate_t": arr(sim._r_t[cur["rate"]:nr]), "rate_cmd": arr(sim._r_cmd[cur["rate"]:nr]),
                 "rate_eff": arr(sim._r_eff[cur["rate"]:nr]),
+                **pi, "limits": command_limits(sim.cfg),
                 "events": [(t_, k) for (t_, k, _d) in sim.events[cur["ev"]:] if k in ("step", "servo_reset", "locked")],
                 "changes": sim.changes[cur["ch"]:],
                 "counters": dict(sim.counters),

@@ -15,7 +15,7 @@ import traceback
 from ..config import SimConfig
 from ..engine import Simulation
 from ..export import export_result
-from ..live import LiveSession, pack_result
+from ..live import LiveSession, overlay_config, pack_result
 from ..metrics import MetricsConfig, compute_metrics
 
 CHUNK_S = 20.0
@@ -68,9 +68,8 @@ def worker_main(req_q, res_q, latest) -> None:
                 out["main"] = pack_result(res)
                 out["main"]["act"] = sim.act.describe()
                 out["metrics"] = compute_metrics(res, mc)
-                if msg.get("overlay") and cfg.controller.name != "baseline_pi":
-                    bcfg = cfg.with_overrides(**{"controller.name": "baseline_pi",
-                                                 "controller.params": {"kp": 0.7, "ki": 0.3}})
+                bcfg = overlay_config(cfg) if msg.get("overlay") else None
+                if bcfg is not None:
                     bsim = Simulation(bcfg)
                     if not _run_cancellable(bsim, cfg.duration_s, gen, latest):
                         res_q.put({"type": "cancelled", "gen": gen})

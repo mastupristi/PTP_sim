@@ -69,7 +69,9 @@ class SimResult:
     servo_offset_est_ns: np.ndarray
     servo_offset_true_ns: np.ndarray      # true offset at the t2 instant
     servo_offset_true_proc_ns: np.ndarray
-    servo_cmd_ppb: np.ndarray             # NaN when no command was issued
+    servo_cmd_ppb: np.ndarray             # controller output; NaN when no command was issued
+    servo_cmd_applied_ppb: np.ndarray     # command accepted by the driver (after the optional clamp); NaN otherwise
+    servo_p_ppb: np.ndarray               # proportional term of that update; NaN when the controller did not run
     servo_integral: np.ndarray
     servo_action: np.ndarray              # 0 pi, 1 step, 2 outlier rejected, 3 reset (range/driver)
     # delay samples
@@ -149,6 +151,8 @@ class Simulation:
         self._s_true: list[float] = []
         self._s_true_p: list[float] = []
         self._s_cmd: list[float] = []
+        self._s_app: list[float] = []
+        self._s_p: list[float] = []
         self._s_int: list[float] = []
         self._s_act: list[int] = []
         self._d_t: list[float] = []
@@ -384,13 +388,16 @@ class Simulation:
     def _true_phi(self, t_ps: int) -> float:
         return self.clock.phi_ns(t_ps)
 
-    def _record_sample(self, t_arr: int, offset: int, cmd: float, action: int) -> None:
+    def _record_sample(self, t_arr: int, offset: int, cmd: float, action: int,
+                       p_ppb: float = float("nan"), applied_ppb: float = float("nan")) -> None:
         self._s_t_proc.append(self.now / PS_PER_S)
         self._s_t_samp.append(t_arr / PS_PER_S)
         self._s_off.append(offset)
         self._s_true.append(self.clock.phi_hist_ns(t_arr))
         self._s_true_p.append(self.clock.phi_ns(self.now))
         self._s_cmd.append(cmd)
+        self._s_app.append(applied_ppb)
+        self._s_p.append(p_ppb)
         self._s_int.append(self.ctrl.integral)
         self._s_act.append(action)
 
@@ -437,23 +444,25 @@ class Simulation:
                              index=self.fw_servo_index)
         self.fw_servo_index += 1
         sat_before = getattr(self.ctrl, "saturated_count", 0)
-        ppb = self.ctrl.update(sample)
-        if getattr(self.ctrl, "saturated_count", 0) != sat_before:
-            self.counters["saturated"] += 1
+        ppb_req = self.ctrl.update(sample)
+        p_ppb = self.ctrl._proportional(self.ctrl.last_error)
+        ppb, fw_clamped = self._clamp_command(ppb_req)
+        if fw_clamped or getattr(self.ctrl, "saturated_count", 0) != sat_before:
+            self.counters["saturated"] += 1           # once per update, whichever clamp acted
         scaled = fwport.ppb_to_scaled_ppm(ppb)
         if scaled is None:
-            self._record_sample(t_arr, offset, ppb, 3)
+            self._record_sample(t_arr, offset, ppb_req, 3, p_ppb)
             self.counters["range_resets"] += 1
             self._servo_reset("ppb out of range")
             return
         ratio = fwport.scaled_ppm_to_ratio(scaled)
         if self.act.adjust(ratio) < 0:
-            self._record_sample(t_arr, offset, ppb, 3)
+            self._record_sample(t_arr, offset, ppb_req, 3, p_ppb)
             self.counters["range_resets"] += 1
             self._servo_reset("actuator rejected ratio")
             return
         self._last_cmd_ppb = ppb
-        self._record_sample(t_arr, offset, ppb, 0)
+        self._record_sample(t_arr, offset, ppb_req, 0, p_ppb, ppb)
         self._schedule_rate_effect()
         # clock_servo_update_lock
         if abs(offset) > fwc.lock_offset_ns:
@@ -464,6 +473,16 @@ class Simulation:
         if not self.fw_locked and self.fw_lock_samples >= fwc.lock_samples:
             self.fw_locked = True
             self._log("locked", "")
+
+    def _clamp_command(self, ppb: float) -> tuple[float, bool]:
+        """Experimental command clamp (NOT in the firmware): +-``firmware.cmd_clamp_ppm``, 0 = off.
+
+        Only finite requests are clamped: NaN/inf must keep failing ``ppb_to_scaled_ppm`` (servo reset)
+        instead of silently becoming a full-scale command."""
+        limit_ppb = self.cfg.firmware.cmd_clamp_ppm * 1000.0
+        if limit_ppb <= 0.0 or not math.isfinite(ppb) or abs(ppb) <= limit_ppb:
+            return ppb, False
+        return math.copysign(limit_ppb, ppb), True
 
     # ------------------------------------------------------------------ rate effect / oscillator
     def _schedule_rate_effect(self) -> None:
@@ -668,7 +687,8 @@ class Simulation:
             servo_t_proc_s=arr(self._s_t_proc), servo_t_sample_s=arr(self._s_t_samp),
             servo_offset_est_ns=arr(self._s_off, dtype=np.float64),
             servo_offset_true_ns=arr(self._s_true), servo_offset_true_proc_ns=arr(self._s_true_p),
-            servo_cmd_ppb=arr(self._s_cmd), servo_integral=arr(self._s_int),
+            servo_cmd_ppb=arr(self._s_cmd), servo_cmd_applied_ppb=arr(self._s_app),
+            servo_p_ppb=arr(self._s_p), servo_integral=arr(self._s_int),
             servo_action=arr(self._s_act, dtype=np.int8),
             delay_t_proc_s=arr(self._d_t), delay_est_ns=arr(self._d_est, dtype=np.float64),
             delay_true_sample_ns=arr(self._d_true),

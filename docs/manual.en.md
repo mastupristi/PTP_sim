@@ -36,14 +36,14 @@ The controller never sees the true values.
 ## 2. The window
 
 ```
-┌ tabs (parameters) ┐ ┌ toolbar: units, overlay, estimated, diagnostics, transient line, view, fit, status, language ┐
-│ Run               │ │ plot 1: Delay                                                                              │
-│ Controller        │ │ plot 2: Offset            (all plots share the time axis, zoom/pan with mouse wheel/drag)  │
-│ PTP intervals     │ │ plot 3 (optional): Rate diagnostics                                                       │
-│ Scenario          │ │ metrics table (always fully visible)                                                       │
-│ Network and noise │ └────────────────────────────────────────────────────────────────────────────────────────────┘
-│ Actuator          │
-└───────────────────┘
+┌ tabs (parameters) ┐ ┌ toolbar: units, view, fit, status, language ─────────────────────────────────────┐
+│ Run               │ │ show: overlay, estimated, diagnostics, PI terms, transient line                  │
+│ Controller        │ │ plot 1: Delay                                                                    │
+│ PTP intervals     │ │ plot 2: Offset   (all plots share the time axis, zoom/pan with mouse wheel/drag) │
+│ Scenario          │ │ plot 3 (optional): Rate diagnostics                                              │
+│ Network and noise │ │ plot 4 (optional): PI terms (P, I, controller output, applied command)           │
+│ Actuator          │ │ metrics table (always fully visible)                                             │
+└───────────────────┘ └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Language** (top right): English (default) or Italian. Switching rebuilds the window in the new language and keeps
@@ -53,10 +53,17 @@ the current configuration (a running live session is restarted). The choice is r
 
 * *Delay plot*: the firmware's delay estimate (green) is **held** until the next Delay_Resp is processed, with a dot at
   every sample (so the real sampling rate is visible); the dashed black line is the physical delay of the network.
-* *Offset plot*: true offset (blue), estimated offset (orange), optionally the baseline (pink, dashed) for comparison.
+* *Offset plot*: true offset (blue), estimated offset (orange), optionally the baseline (pink, dashed) for comparison:
+  the **unmodified firmware** (baseline PI 0.7/0.3, `clock.c` constants, no command clamp) on the same scenario and seed.
   Vertical dotted red lines mark servo steps/resets; vertical dashed grey lines (live mode) mark parameter changes.
 * *Rate diagnostics*: the ppb commanded by the servo vs the actual rate error of the clock relative to the GM
   (includes the oscillator error).
+* *PI terms* (ppm): at every servo update the proportional term **P = kp·e**, the integrator **I** and the **controller
+  output** (P + I for the PI laws, before the command clamp); the **command applied** to the clock (held, green) shows the
+  clamp and the return to nominal at every servo reset. Steps and rejected outliers have no update, so no point.
+  Horizontal lines mark the active limits: actuator ±50 000 ppm, command clamp, integrator limit (`pi_anti_windup`),
+  controller limit (`sat_ppb` of `pi_time_aware`); they do not enter the y auto-range. Use it to size an anti-windup
+  limit: how large I gets while the command is clamped, and the steady I it must still be able to hold.
 * **Transient-end line** (dashed vertical, labelled): the instant at which the true offset enters the settling band
   and stays there for the dwell time (§4). On the Offset plot the line of the baseline overlay is drawn in pink.
 * **View** selector: *Full* (whole run), *Transient* (from t=0 — or from just before the servo start after a forced
@@ -95,17 +102,20 @@ firmware reads from Kconfig/devicetree are noted.
 **Files**: *Save config/seed* writes the JSON of the current scenario (seed included); *Load config* restores it exactly
 (values outside a widget's range or per-message-type settings are preserved until you edit that control); *Export CSV*
 writes `params.json`, `metrics.json`, `servo_samples.csv`, `delay_samples.csv`, `true_offset.csv`, `rate.csv`, `events.csv`.
+`servo_samples.csv` holds, per servo sample, the controller output `cmd_ppb`, the `integral`, the `action` and — last two
+columns — the command accepted by the driver `cmd_applied_ppb` (after the clamp) and the proportional term `p_ppb`.
 
 ### 3.2 Tab "Controller"
 
-**Controller** — which law drives the clock rate. Both output an **absolute** frequency correction in ppb
+**Controller** — which law drives the clock rate. All of them output an **absolute** frequency correction in ppb
 (positive = faster) from the **estimated offset** only.
 
 * `baseline_pi` — port of the firmware (`precision_pi_update`): `integral += ki·e; u = kp·e + integral`, `e = −offset [ns]`.
   * **kp** [ppb/ns]: proportional gain (firmware default 0.7 = `PRECISION_TIMING_PI_KP` 700/1000).
   * **ki** [ppb/ns per update]: integral gain, applied **per sample, with no dt** (firmware default 0.3).
     Consequence: the loop's damping depends on the Sync interval (the Kconfig help says the defaults suit ≈1 s).
-  * No saturation: a command beyond ±50 000 ppm is rejected by the NXP driver and the firmware resets the servo.
+  * No saturation: a command beyond ±50 000 ppm is rejected by the NXP driver and the firmware resets the servo
+    (unless the experimental *command clamp* below is on; the integrator then winds up, there is no anti-windup).
 * `pi_time_aware` — experimental PI with explicit time and anti-windup.
   * **wn** [rad/s]: closed-loop natural frequency; `kp = 2ζ·wn` [1/s], `ki = wn²` [1/s²].
   * **zeta** []: damping ratio (1 = critically damped).
@@ -114,6 +124,21 @@ writes `params.json`, `metrics.json`, `servo_samples.csv`, `delay_samples.csv`, 
   * **wn_ts_max** [rad]: caps the bandwidth at `wn·dt ≤ wn_ts_max` so the sampled loop stays stable (`kp·dt < 2`).
   * **dt_clamp** []: the interval measured from consecutive `t1` is clamped to `dt_clamp ×` the nominal Sync interval
     (protects against lost messages).
+* `pi_anti_windup` — the firmware PI law (same per-update **kp**, **ki**, no dt) with an integrator limit:
+  `integral += ki·e; integral = clamp(integral, ±i_max); u = kp·e + integral`.
+  * **i_max_ppm** [ppm]: integrator limit; **0 = off**, and the controller is then identical to `baseline_pi`.
+    It bounds the windup while the command clamp saturates. It must stay **above the steady frequency correction**
+    (oscillator error + drift): with 20 ppm of oscillator error and i_max = 10 ppm, P must supply the other 10 ppm and
+    the offset settles at 10 ppm / kp ≈ 14.3 µs instead of 0.
+
+**Firmware servo (clock.c)** — options of the servo around the controller (they apply to every controller):
+* **Command clamp** (`firmware.cmd_clamp_ppm`, default 0 = off) — **not in the firmware**: the command is saturated to
+  ±this value before the driver, instead of being rejected (→ servo reset) when it exceeds the actuator limit. Capped at
+  50 000 ppm in the GUI (above it the driver still rejects). A NaN/infinite command is not clamped: it still resets the servo.
+* **Step threshold |offset|** (`firmware.step_threshold_ns`, firmware 1 s = `SYNC_SERVO_STEP_THRESHOLD_NS`): above it
+  the firmware steps the clock (forced alignment, §3.4) and resets the servo. The `|delay| > 1 s` rejection is unchanged.
+
+Both can be changed in live mode; the baseline overlay keeps the unmodified firmware values.
 
 Changing the controller in live mode builds the new one with its defaults (plus the values shown); the integrator policy
 decides what is carried over.
@@ -142,9 +167,10 @@ n ∈ [−4, 2] — this is a GUI choice, **not** a protocol limit (the firmware
 ### 3.4 Tab "Scenario"
 
 * **Initial offset** (`oscillator.initial_offset_ns`; shown in µs; range ±2×10⁹ s with a log-scale slider): slave − GM at t = 0.
-  * |offset| ≤ 1 s: the PI handles it (above ≈ 50 ms the baseline asks > 50 000 ppm, the driver rejects it and the
-    servo resets in a loop — a real firmware weakness the simulator reproduces).
-  * |offset| > 1 s: the firmware performs a **forced alignment** (`clock_step`): it sets the PHC to *now − offset*,
+  * |offset| ≤ step threshold (1 s in the firmware, Controller tab): the PI handles it (above ≈ 50 ms the baseline asks
+    > 50 000 ppm, the driver rejects it and the servo resets in a loop — a real firmware weakness the simulator
+    reproduces — unless the command clamp is on).
+  * |offset| > step threshold: the firmware performs a **forced alignment** (`clock_step`): it sets the PHC to *now − offset*,
     clears the stored timestamps and the delay estimate and resets the servo. The servo restarts only after a **new
     Delay_Resp** (up to one Delay_Req interval later). The step uses the offset estimated at the first Sync/Follow_Up
     pair that has a delay estimate, so it also needs the first Delay_Resp (random, up to 2·2ⁿ s after start).
@@ -212,7 +238,7 @@ All metrics use full-resolution data. For the true offset and the estimated offs
 * **Steady state** (last W seconds, or after the transient end): **median, minimum, maximum, median |x|, RMS, mean (bias)**.
 * **Diverged**: non-finite, |x| beyond 1 s after the servo start, or a large final RMS.
 * **Delay estimate (steady)**: median / min / max of the firmware's delay estimate in the same window, next to the physical delay.
-* **Saturation / resets**: controller clamps, out-of-range resets (command rejected → `clock_servo_reset`), servo resets, clock
+* **Saturation / resets**: clamps (controller limit or command clamp, once per update), out-of-range resets (command rejected → `clock_servo_reset`), servo resets, clock
   steps, outliers rejected (offset > 100 ms after lock).
 * **Compute time**: simulation and metrics time; GUI latency from the change to the end of the repaint.
 
@@ -221,6 +247,9 @@ All metrics use full-resolution data. For the true offset and the estimated offs
 * **Large initial offset**: Scenario → Initial offset 100 ms (the PI is overwhelmed: resets) or 3 s (forced alignment); or press
   *Slave PHC starts at 0*. Use View → *Transient*.
 * **Compare controllers**: select `pi_time_aware`, tick *Overlay baseline*; both see the same noise.
+* **Size the anti-windup**: Scenario → Initial offset 100 ms; Controller → Command clamp 1000 ppm; tick *PI terms*. With
+  `baseline_pi` the integrator winds up to ≈ 6×10⁶ ppm and the offset overshoots to ≈ −100 ms; select `pi_anti_windup`
+  and raise **i_max_ppm** from just above the oscillator error (20 ppm here): at 100 ppm the overshoot is ≈ 44 µs.
 * **Asymmetry bias**: Network → Asymmetry 1000 ns: true offset steady-state median → −500 ns, estimated → 0.
 * **Rate granularity**: Actuator → NXP, 24 MHz, Frequency error 5 ppm: the true offset dithers by µs.
 * **Live tuning**: Mode → Live, Start, speed 20×, change kp while it runs; choose the integrator policy first.
@@ -232,7 +261,8 @@ Everything is in `SimConfig` (`ptpsim/config.py`). Save from the GUI or write by
 time base of all timestamps, default 1.7×10¹⁸ ns; must be > 0), and the groups `intervals`, `oscillator`, `network`, `latency`,
 `tx_jitter`, `timestamps`, `loss`, `actuator`, `controller` (`name`, `params`), `firmware`.
 `firmware` holds the constants of `clock.c`: `step_threshold_ns` (1 s), `lock_offset_ns` (10 ms), `lock_samples` (3),
-`outlier_ns` (100 ms), `outlier_samples` (2), `delay_req_clear_ns` (3 s).
+`outlier_ns` (100 ms), `outlier_samples` (2), `delay_req_clear_ns` (3 s), plus the experimental `cmd_clamp_ppm` (0 = off,
+not in the firmware).
 A jitter object is `{ "kind": "none|uniform|normal|exponential", "scale_ns": x, "clip_sigma": 4 }`.
 
 Command line: `ptpsim-run run [--config f | --preset default|noisy] [--set key=value …] --out dir`;

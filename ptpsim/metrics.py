@@ -25,8 +25,10 @@ Definitions
 * **Peak error**: ``max |x|`` over the run (true offset: exact, from the piecewise-linear vertices),
   and ``peak_excess = peak - |x0|`` (growth beyond the initial error, e.g. from a frequency error).
 * **RMS / bias** over the final window [T - W, T]: ``sqrt(mean(x^2))`` and ``mean(x)``.
-* **Saturation**: servo updates whose command was clamped by the controller, and updates that
-  caused a range reset (``ppb`` or actuator limit exceeded -> firmware ``clock_servo_reset``).
+* **Saturation**: servo updates whose command was clamped by the controller or by the experimental
+  firmware command clamp (counted once per update), and updates that caused a range reset (``ppb`` or
+  actuator limit exceeded -> firmware ``clock_servo_reset``).  ``peak_command_ppb`` is the largest
+  controller *request*, before the command clamp (the applied command is ``servo_cmd_applied_ppb``).
 * **Diverged**: non-finite, or ``peak_abs > divergence_ns`` after the initial transient, or the final-window RMS
   larger than ``max(|x0|, band)``.
 """

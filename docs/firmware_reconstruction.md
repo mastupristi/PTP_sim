@@ -109,7 +109,7 @@ All arithmetic is `int64` nanoseconds.
   The first Delay_Req is sent at a random time, so the servo starts late (see §7).
 * Effective period = Sync interval as seen by the receiver (jitter and losses included). No dt is
   passed to the PI.
-* Offset steps: `|offset| > 1 s` → `clock_step` (clock.c:673): `target = phc_now - offset`,
+* Offset steps: `|offset| > 1 s` (`SYNC_SERVO_STEP_THRESHOLD_NS`, clock.c:50, tested at clock.c:804) → `clock_step` (clock.c:673): `target = phc_now - offset`,
   `precision_clock_set`, then `timestamp = 0`, `mean_delay = 0`, `clock_servo_reset()`.
 * Acquisition/validity (`clock_servo_update_lock`, clock.c:610; `clock_adjust_rate`, clock.c:721):
   * lock after 3 consecutive servo samples with `|offset| <= 10 ms`;
@@ -143,6 +143,8 @@ return pi->kp * error + pi->integral;
 * Failure of the conversion or of `adjust_rate` (e.g. the NXP driver rejects `|ratio-1| > 50000 ppm`,
   `CONFIG_PTP_CLOCK_NXP_ENET_MAX_RATIO_PPM`) → `clock_servo_reset()`: integrator = 0, rate back to
   `ratio = 1.0` (`adjust_rate(0)`), lock cleared. There is no clamp/saturation and no anti-windup.
+  (The simulator's `firmware.cmd_clamp_ppm` and the `pi_anti_windup` controller are experiments, not firmware
+  behaviour; both are off/absent in the baseline.)
 * Sign: `offset > 0` (slave ahead) → `error < 0` → `ratio < 1` → fewer ns per tick → slave slows.
   Negative feedback, verified against the NXP driver (average tick = nominal·ratio).
 

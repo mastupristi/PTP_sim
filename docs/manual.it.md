@@ -35,14 +35,14 @@ Il controllore non vede mai i valori reali.
 ## 2. La finestra
 
 ```
-┌ schede (parametri) ┐ ┌ barra: unità, sovrapposizioni, stimato, diagnostica, riga transitorio, vista, adatta, stato, lingua ┐
-│ Esecuzione         │ │ grafico 1: Delay                                                                                  │
-│ Controllore        │ │ grafico 2: Offset     (tutti condividono l'asse tempo; zoom/pan con rotella e trascinamento)       │
-│ Intervalli PTP     │ │ grafico 3 (opzionale): Diagnostica rate                                                           │
-│ Scenario           │ │ tabella delle metriche (sempre visibile per intero)                                               │
-│ Rete e disturbi    │ └───────────────────────────────────────────────────────────────────────────────────────────────────┘
-│ Attuatore          │
-└────────────────────┘
+┌ schede (parametri) ┐ ┌ barra: unità, vista, adatta, stato, lingua ────────────────────────────────────────────────┐
+│ Esecuzione         │ │ mostra: sovrapposizione, stimato, diagnostica, termini PI, riga transitorio                │
+│ Controllore        │ │ grafico 1: Delay                                                                           │
+│ Intervalli PTP     │ │ grafico 2: Offset   (tutti condividono l'asse tempo; zoom/pan con rotella e trascinamento) │
+│ Scenario           │ │ grafico 3 (opzionale): Diagnostica rate                                                    │
+│ Rete e disturbi    │ │ grafico 4 (opzionale): Termini PI (P, I, uscita controllore, comando applicato)            │
+│ Attuatore          │ │ tabella delle metriche (sempre visibile per intero)                                        │
+└────────────────────┘ └────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Lingua** (in alto a destra): English (predefinita) o Italiano. Il cambio ricostruisce la finestra nella nuova lingua
@@ -52,10 +52,17 @@ mantenendo la configurazione (una sessione live in corso viene riavviata). La sc
 
 * *Grafico Delay*: la stima del delay del firmware (verde) è **tenuta** fino all'elaborazione della Delay_Resp successiva, con un
   punto a ogni campione (così si vede la frequenza reale dei campioni); la linea nera tratteggiata è il delay fisico della rete.
-* *Grafico Offset*: offset reale (blu), stimato (arancio), opzionalmente la baseline (rosa, tratteggiata) per confronto.
+* *Grafico Offset*: offset reale (blu), stimato (arancio), opzionalmente la baseline (rosa, tratteggiata) per confronto:
+  il **firmware non modificato** (PI baseline 0.7/0.3, costanti di `clock.c`, nessun clamp del comando) sullo stesso scenario e seed.
   Le righe verticali rosse punteggiate indicano step/reset del servo; le righe grigie tratteggiate (live) i cambi di parametro.
 * *Diagnostica rate*: i ppb comandati dal servo contro l'errore di rate effettivo del clock rispetto al GM (include
   l'errore dell'oscillatore).
+* *Termini PI* (ppm): a ogni aggiornamento del servo il termine proporzionale **P = kp·e**, l'integratore **I** e l'**uscita
+  del controllore** (P + I per le leggi PI, prima del clamp del comando); il **comando applicato** al clock (mantenuto, verde)
+  mostra il clamp e il ritorno al nominale a ogni reset del servo. Step e outlier rifiutati non aggiornano, quindi nessun punto.
+  Le righe orizzontali indicano i limiti attivi: attuatore ±50 000 ppm, clamp del comando, limite dell'integratore
+  (`pi_anti_windup`), limite del controllore (`sat_ppb` di `pi_time_aware`); non entrano nell'auto-range dell'asse y. Serve a
+  dimensionare un limite anti-windup: quanto cresce I mentre il comando è in clamp, e quale I a regime deve poter ancora tenere.
 * **Riga di fine transitorio** (verticale tratteggiata, con etichetta): istante in cui l'offset reale entra nella banda di
   assestamento e vi resta per il tempo di permanenza (§4). Nel grafico Offset la riga della baseline sovrapposta è rosa.
 * **Vista**: *Completa* (tutta la corsa), *Transitorio* (da t=0 — o da poco prima dell'avvio del servo dopo un riallineamento
@@ -94,17 +101,20 @@ il firmware lo legge da Kconfig/devicetree.
 **File**: *Salva config/seed* scrive il JSON dello scenario (seed compreso); *Carica config* lo ripristina esattamente (valori fuori
 dal range di un controllo, o impostazioni per tipo di messaggio, restano finché non modifichi quel controllo); *Esporta CSV*
 scrive `params.json`, `metrics.json`, `servo_samples.csv`, `delay_samples.csv`, `true_offset.csv`, `rate.csv`, `events.csv`.
+`servo_samples.csv` contiene, per ogni campione del servo, l'uscita del controllore `cmd_ppb`, l'`integral`, l'`action` e —
+ultime due colonne — il comando accettato dal driver `cmd_applied_ppb` (dopo il clamp) e il termine proporzionale `p_ppb`.
 
 ### 3.2 Scheda "Controllore"
 
-**Controllore** — la legge che comanda il rate del clock. Entrambi producono una correzione di frequenza **assoluta** in ppb
+**Controllore** — la legge che comanda il rate del clock. Tutti producono una correzione di frequenza **assoluta** in ppb
 (positivo = più veloce) usando solo l'**offset stimato**.
 
 * `baseline_pi` — porting del firmware (`precision_pi_update`): `integrale += ki·e; u = kp·e + integrale`, `e = −offset [ns]`.
   * **kp** [ppb/ns]: guadagno proporzionale (default firmware 0.7 = `PRECISION_TIMING_PI_KP` 700/1000).
   * **ki** [ppb/ns per aggiornamento]: guadagno integrale, applicato **a ogni campione, senza dt** (default firmware 0.3).
     Conseguenza: lo smorzamento dell'anello dipende dall'intervallo Sync (l'help Kconfig dice che i default vanno bene per ≈1 s).
-  * Nessuna saturazione: un comando oltre ±50 000 ppm viene rifiutato dal driver NXP e il firmware azzera il servo.
+  * Nessuna saturazione: un comando oltre ±50 000 ppm viene rifiutato dal driver NXP e il firmware azzera il servo
+    (a meno che sia attivo il *clamp del comando* sperimentale qui sotto; l'integratore allora va in windup, non c'è anti-windup).
 * `pi_time_aware` — PI sperimentale con tempo esplicito e anti-windup.
   * **wn** [rad/s]: frequenza naturale dell'anello chiuso; `kp = 2ζ·wn` [1/s], `ki = wn²` [1/s²].
   * **zeta** []: smorzamento (1 = criticamente smorzato).
@@ -113,6 +123,21 @@ scrive `params.json`, `metrics.json`, `servo_samples.csv`, `delay_samples.csv`, 
   * **wn_ts_max** [rad]: limita la banda a `wn·dt ≤ wn_ts_max` perché l'anello campionato resti stabile (`kp·dt < 2`).
   * **dt_clamp** []: l'intervallo misurato da `t1` consecutivi è limitato a `dt_clamp ×` l'intervallo Sync nominale (protezione
     contro i messaggi persi).
+* `pi_anti_windup` — la legge del PI firmware (stessi **kp**, **ki** per aggiornamento, senza dt) con un limite dell'integratore:
+  `integrale += ki·e; integrale = clamp(integrale, ±i_max); u = kp·e + integrale`.
+  * **i_max_ppm** [ppm]: limite dell'integratore; **0 = off**, e il controllore è allora identico a `baseline_pi`.
+    Limita il windup mentre il clamp del comando satura. Deve restare **sopra la correzione di frequenza a regime**
+    (errore dell'oscillatore + deriva): con 20 ppm di errore dell'oscillatore e i_max = 10 ppm, P deve fornire gli altri
+    10 ppm e l'offset si assesta a 10 ppm / kp ≈ 14.3 µs invece che a 0.
+
+**Servo del firmware (clock.c)** — opzioni del servo attorno al controllore (valgono per ogni controllore):
+* **Clamp del comando** (`firmware.cmd_clamp_ppm`, default 0 = off) — **non presente nel firmware**: il comando viene saturato a
+  ±questo valore prima del driver, invece di essere rifiutato (→ reset del servo) quando supera il limite dell'attuatore.
+  Limitato a 50 000 ppm nella GUI (oltre, il driver rifiuta comunque). Un comando NaN/infinito non viene limitato: azzera ancora il servo.
+* **Soglia di step |offset|** (`firmware.step_threshold_ns`, firmware 1 s = `SYNC_SERVO_STEP_THRESHOLD_NS`): oltre questa soglia
+  il firmware fa uno step del clock (riallineamento forzato, §3.4) e azzera il servo. Il rifiuto `|delay| > 1 s` non cambia.
+
+Entrambi si possono cambiare in modalità live; la baseline sovrapposta mantiene i valori del firmware non modificato.
 
 Cambiando controllore in live, il nuovo parte coi suoi default (più i valori mostrati); la politica dell'integratore decide cosa si riporta.
 
@@ -140,9 +165,10 @@ n ∈ [−4, 2]: è una scelta della GUI, **non** un limite del protocollo (il f
 ### 3.4 Scheda "Scenario"
 
 * **Offset iniziale** (`oscillator.initial_offset_ns`; mostrato in µs; intervallo ±2×10⁹ s con slider logaritmico): slave − GM a t = 0.
-  * |offset| ≤ 1 s: se ne occupa il PI (oltre ≈ 50 ms la baseline chiede > 50 000 ppm, il driver rifiuta e il servo si azzera in
-    ciclo: una debolezza reale del firmware che il simulatore riproduce).
-  * |offset| > 1 s: il firmware esegue un **riallineamento forzato** (`clock_step`): imposta il PHC a *adesso − offset*, cancella i
+  * |offset| ≤ soglia di step (1 s nel firmware, scheda Controllore): se ne occupa il PI (oltre ≈ 50 ms la baseline chiede
+    > 50 000 ppm, il driver rifiuta e il servo si azzera in ciclo: una debolezza reale del firmware che il simulatore riproduce;
+    a meno che sia attivo il clamp del comando).
+  * |offset| > soglia di step: il firmware esegue un **riallineamento forzato** (`clock_step`): imposta il PHC a *adesso − offset*, cancella i
     timestamp memorizzati e la stima del delay e azzera il servo. Il servo riparte solo dopo una **nuova Delay_Resp** (fino a un
     intervallo Delay_Req dopo). Lo step usa l'offset stimato alla prima coppia Sync/Follow_Up che dispone di un delay, quindi serve
     anche la prima Delay_Resp (casuale, fino a 2·2ⁿ s dall'avvio).
@@ -207,7 +233,7 @@ Tutte le metriche usano i dati a piena risoluzione. Per l'offset reale e per que
 * **Regime** (ultimi W secondi, o dopo la fine del transitorio): **mediana, minimo, massimo, mediana |x|, RMS, media (bias)**.
 * **Divergente**: non finito, |x| oltre 1 s dopo l'avvio del servo, o RMS finale elevato.
 * **Stima delay (regime)**: mediana / min / max della stima del delay del firmware nella stessa finestra, accanto al delay fisico.
-* **Saturazione / reset**: clamp del controllore, reset per comando fuori range (comando rifiutato → `clock_servo_reset`), reset del servo,
+* **Saturazione / reset**: clamp (limite del controllore o clamp del comando, una volta per aggiornamento), reset per comando fuori range (comando rifiutato → `clock_servo_reset`), reset del servo,
   step di clock, outlier rifiutati (offset > 100 ms dopo l'aggancio).
 * **Tempo di calcolo**: tempo di simulazione e metriche; latenza GUI dalla modifica alla fine del ridisegno.
 
@@ -216,6 +242,10 @@ Tutte le metriche usano i dati a piena risoluzione. Per l'offset reale e per que
 * **Offset iniziale grande**: Scenario → Offset iniziale 100 ms (il PI è sopraffatto: reset) o 3 s (riallineamento forzato); oppure
   *PHC slave parte da 0*. Usa Vista → *Transitorio*.
 * **Confrontare controllori**: scegli `pi_time_aware`, spunta *Sovrapponi baseline*; entrambi vedono lo stesso rumore.
+* **Dimensionare l'anti-windup**: Scenario → Offset iniziale 100 ms; Controllore → Clamp del comando 1000 ppm; spunta *Termini PI*.
+  Con `baseline_pi` l'integratore va in windup fino a ≈ 6×10⁶ ppm e l'offset sovraelonga fino a ≈ −100 ms; scegli
+  `pi_anti_windup` e alza **i_max_ppm** partendo da poco sopra l'errore dell'oscillatore (qui 20 ppm): a 100 ppm la
+  sovraelongazione è ≈ 44 µs.
 * **Bias da asimmetria**: Rete → Asimmetria 1000 ns: la mediana a regime dell'offset reale → −500 ns, dello stimato → 0.
 * **Granularità del rate**: Attuatore → NXP, 24 MHz, Errore di frequenza 5 ppm: l'offset reale oscilla di µs.
 * **Taratura live**: Modalità → Live, Start, velocità 20×, cambia kp mentre gira; scegli prima la politica dell'integratore.
@@ -226,7 +256,8 @@ Tutto è in `SimConfig` (`ptpsim/config.py`). Salva dalla GUI o scrivi a mano; e
 `ptpsim-gui file.json`. Livello alto: `duration_s`, `seed`, `epoch_ns` (base temporale assoluta di tutti i timestamp, default 1.7×10¹⁸ ns;
 deve essere > 0) e i gruppi `intervals`, `oscillator`, `network`, `latency`, `tx_jitter`, `timestamps`, `loss`, `actuator`,
 `controller` (`name`, `params`), `firmware`. `firmware` contiene le costanti di `clock.c`: `step_threshold_ns` (1 s), `lock_offset_ns`
-(10 ms), `lock_samples` (3), `outlier_ns` (100 ms), `outlier_samples` (2), `delay_req_clear_ns` (3 s).
+(10 ms), `lock_samples` (3), `outlier_ns` (100 ms), `outlier_samples` (2), `delay_req_clear_ns` (3 s), più lo sperimentale
+`cmd_clamp_ppm` (0 = off, non presente nel firmware).
 Un oggetto jitter è `{ "kind": "none|uniform|normal|exponential", "scale_ns": x, "clip_sigma": 4 }`.
 
 Riga di comando: `ptpsim-run run [--config f | --preset default|noisy] [--set chiave=valore …] --out dir`;

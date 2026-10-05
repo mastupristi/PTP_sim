@@ -1,0 +1,163 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Experimental servo options: command clamp, configurable step threshold, anti-windup PI,
+P/I terms recording and the unmodified-firmware overlay."""
+import numpy as np
+import pytest
+
+from ptpsim.config import FirmwareConfig
+from ptpsim.controllers import BaselinePI
+from ptpsim.engine import Simulation, simulate
+from ptpsim.live import LiveSession, overlay_config, pack_result
+
+from .helpers import quiet_cfg
+
+ACT_LIMIT_PPB = 50_000_000.0
+
+
+def _aw(cfg, i_max_ppm):
+    return cfg.with_overrides(**{"controller.name": "pi_anti_windup",
+                                 "controller.params": {"kp": 0.7, "ki": 0.3, "i_max_ppm": i_max_ppm}})
+
+
+# --------------------------------------------------------------------------- command clamp
+
+def test_command_clamp_is_off_by_default():
+    assert FirmwareConfig().cmd_clamp_ppm == 0.0
+
+
+def test_command_clamp_saturates_instead_of_resetting_and_the_baseline_winds_up():
+    cfg = quiet_cfg(**{"oscillator.initial_offset_ns": 200e6, "firmware.cmd_clamp_ppm": 50_000.0})
+    r = simulate(cfg)
+    assert r.counters["range_resets"] == 0 and r.counters["resets"] == 0 and r.counters["saturated"] > 0
+    upd = np.flatnonzero(r.servo_action == 0)
+    first = upd[:5]
+    assert (r.servo_cmd_ppb[first] < -ACT_LIMIT_PPB).all()             # the PI asks for more ...
+    assert (r.servo_cmd_applied_ppb[first] == -ACT_LIMIT_PPB).all()    # ... the clamp applies the limit
+    assert np.nanmax(np.abs(r.servo_cmd_applied_ppb)) == ACT_LIMIT_PPB
+    # no anti-windup in the baseline: the integrator keeps growing while the command is clamped
+    assert (np.diff(r.servo_integral[first]) < 0).all()
+
+
+@pytest.mark.parametrize("kind", ["ideal", "nxp"])
+def test_clamp_exactly_at_the_actuator_limit_is_accepted_both_signs(kind):
+    sim = Simulation(quiet_cfg(**{"actuator.kind": kind, "firmware.cmd_clamp_ppm": 50_000.0}))
+    sim.fw_mean_delay = 1000
+    sim._clock_adjust_rate(200_000_000, 0.25, 0.25, 0)
+    sim._clock_adjust_rate(-200_000_000, 0.25, 0.25, 0)
+    assert sim.counters["range_resets"] == 0 and sim.counters["saturated"] == 2
+    assert sim._s_app == [-ACT_LIMIT_PPB, ACT_LIMIT_PPB]
+
+
+def test_clamp_does_not_turn_a_non_finite_command_into_full_scale():
+    class NanPI(BaselinePI):
+        def update(self, s):
+            super().update(s)
+            return float("nan")
+
+    sim = Simulation(quiet_cfg(**{"firmware.cmd_clamp_ppm": 1000.0}), controller=NanPI())
+    sim.fw_mean_delay = 1000
+    sim._clock_adjust_rate(1000, 0.25, 0.25, 0)
+    assert sim.counters["range_resets"] == 1 and sim.counters["saturated"] == 0
+    assert sim._clamp_command(float("inf")) == (float("inf"), False)
+    assert sim._clamp_command(-2.0e6) == (-1.0e6, True)
+    assert sim._clamp_command(0.5e6) == (0.5e6, False)
+
+
+# --------------------------------------------------------------------------- step threshold
+
+def test_step_threshold_is_configurable():
+    base = quiet_cfg(**{"oscillator.initial_offset_ns": 0.5e9})
+    assert simulate(base).counters["steps"] == 0                       # firmware: 1 s
+    assert simulate(base.with_overrides(**{"firmware.step_threshold_ns": 100_000_000})).counters["steps"] == 1
+    above = quiet_cfg(**{"oscillator.initial_offset_ns": 1.5e9, "firmware.step_threshold_ns": 2_000_000_000})
+    assert simulate(above).counters["steps"] == 0
+
+
+def test_step_threshold_change_applies_live():
+    sim = Simulation(quiet_cfg(**{"oscillator.initial_offset_ns": 0.5e9}))
+    sim.run_until(5.0)
+    assert sim.counters["steps"] == 0
+    sim.update_config({"firmware.step_threshold_ns": 100_000_000})
+    sim.run_until(10.0)
+    assert sim.counters["steps"] == 1
+
+
+# --------------------------------------------------------------------------- anti-windup PI
+
+def test_anti_windup_with_zero_limit_is_identical_to_the_baseline():
+    cfg = quiet_cfg(**{"oscillator.initial_offset_ns": 100e6, "oscillator.freq_error_ppb": 20_000.0,
+                       "firmware.cmd_clamp_ppm": 1000.0})
+    a, b = simulate(_aw(cfg, 0.0)), simulate(cfg)
+    for name in ("servo_cmd_ppb", "servo_integral", "servo_p_ppb", "servo_offset_true_ns"):
+        assert np.array_equal(getattr(a, name), getattr(b, name), equal_nan=True), name
+
+
+def test_integrator_limit_bounds_the_windup_and_the_overshoot():
+    cfg = quiet_cfg(**{"duration_s": 300.0, "oscillator.initial_offset_ns": 100e6,
+                       "oscillator.freq_error_ppb": 20_000.0, "firmware.cmd_clamp_ppm": 1000.0})
+    wound, limited = simulate(cfg), simulate(_aw(cfg, 100.0))
+    assert np.max(np.abs(wound.servo_integral)) > 1e9                  # > 1e6 ppm stored by the baseline
+    assert np.max(np.abs(limited.servo_integral)) <= 100_000.0
+    assert wound.servo_offset_true_ns.min() < -50e6                    # baseline overshoots by > 50 ms
+    assert limited.servo_offset_true_ns.min() > -100e3                 # limited: < 100 us
+    assert abs(limited.true_offset_ns(np.array([299.0]))[0]) < 10.0
+
+
+def test_integrator_limit_below_the_steady_correction_leaves_an_offset():
+    """I can hold only i_max: P must supply the rest, so e = (20 - 10) ppm / kp = 14.286 us."""
+    cfg = quiet_cfg(**{"duration_s": 120.0, "oscillator.initial_offset_ns": 100_000.0,
+                       "oscillator.freq_error_ppb": 20_000.0})
+    r = simulate(_aw(cfg, 10.0))
+    assert r.true_offset_ns(np.array([119.0]))[0] == pytest.approx(10_000.0 / 0.7, rel=1e-3)
+
+
+# --------------------------------------------------------------------------- P / I recording
+
+def test_p_plus_i_is_the_baseline_output_and_steps_have_no_p_term():
+    r = simulate(quiet_cfg(**{"duration_s": 30.0, "oscillator.initial_offset_ns": 3.0e9}))
+    upd = r.servo_action == 0
+    assert r.counters["steps"] == 1 and upd.sum() > 50
+    assert np.array_equal(r.servo_p_ppb[upd] + r.servo_integral[upd], r.servo_cmd_ppb[upd])
+    assert np.isnan(r.servo_p_ppb[r.servo_action == 1]).all()
+    assert np.array_equal(r.servo_cmd_applied_ppb[upd], r.servo_cmd_ppb[upd])   # no clamp configured
+    pk = pack_result(r)
+    assert pk["pi_t"].size == upd.sum() and pk["limits"]["clamp"] == 0.0
+
+
+def test_live_pi_terms_concatenate_to_the_exploration_ones():
+    cfg = _aw(quiet_cfg(**{"oscillator.initial_offset_ns": 100e6, "firmware.cmd_clamp_ppm": 2000.0}), 50.0)
+    ref = pack_result(simulate(cfg))
+    live = LiveSession(cfg)
+    parts = [live.delta()]
+    for t in (7.3, 21.0, 44.4, 60.0):
+        live.advance(t)
+        parts.append(live.delta())
+    for k in ("pi_t", "pi_p", "pi_i", "pi_out"):
+        assert np.array_equal(np.concatenate([p["main"][k] for p in parts]), ref[k]), k
+    assert parts[-1]["main"]["limits"] == {"actuator": 50000.0, "clamp": 2000.0, "i_max": 50.0, "sat": 0.0}
+
+
+# --------------------------------------------------------------------------- overlay
+
+def test_overlay_is_the_unmodified_firmware():
+    cfg = quiet_cfg()
+    assert overlay_config(cfg) is None                                 # main run already is the firmware
+    mod = _aw(cfg.with_overrides(**{"firmware.cmd_clamp_ppm": 100.0, "firmware.step_threshold_ns": 5_000}), 20.0)
+    b = overlay_config(mod)
+    assert b.firmware == FirmwareConfig()
+    assert b.controller.name == "baseline_pi" and b.controller.params == {"kp": 0.7, "ki": 0.3}
+    assert b.oscillator == mod.oscillator and b.network == mod.network and b.seed == mod.seed
+    clamped_baseline = cfg.with_overrides(**{"firmware.cmd_clamp_ppm": 100.0})
+    assert overlay_config(clamped_baseline).firmware == FirmwareConfig()
+
+
+def test_live_overlay_does_not_receive_firmware_or_controller_changes():
+    cfg = quiet_cfg(**{"firmware.cmd_clamp_ppm": 100.0})
+    live = LiveSession(cfg, overlay=True)
+    assert live.overlay and live.sims["base"].cfg.firmware == FirmwareConfig()
+    live.advance(5.0)
+    live.update({"firmware.cmd_clamp_ppm": 10.0, "network.delay_ms_ns": 2000.0}, "keep")
+    base = live.sims["base"].cfg
+    assert base.firmware.cmd_clamp_ppm == 0.0 and base.network.delay_ms_ns == 2000.0
+    assert live.sims["main"].cfg.firmware.cmd_clamp_ppm == 10.0
+    assert live.delta()["main"]["limits"]["clamp"] == 10.0

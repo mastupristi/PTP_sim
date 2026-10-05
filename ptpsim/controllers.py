@@ -12,7 +12,8 @@ firmware, not the controller, that decides when a reset happens.
 Gain-change policy (live mode): ``set_params(params, policy)`` with policy
 ``keep`` (integrator state untouched - the default), ``reset`` (integrator zeroed) or
 ``bumpless`` (integrator recomputed so that the *last output* is unchanged).  Nothing is reset
-implicitly.
+implicitly.  (For ``pi_anti_windup`` a carried-over integral above ``i_max_ppm`` is clamped at the
+next update, not at the change.)
 """
 from __future__ import annotations
 
@@ -209,7 +210,35 @@ class PITimeAware(Controller):
         return self.kp * error
 
 
-REGISTRY: dict[str, type[Controller]] = {c.name: c for c in (BaselinePI, PITimeAware)}
+class PIAntiWindup(BaselinePI):
+    """Firmware PI law with an integrator limit (anti-windup by integral clamping).
+
+    ``integral += ki * e;  integral = clamp(integral, +-i_max);  ppb = kp * e + integral``,
+    with the same per-sample kp, ki, sign and absolute output as ``baseline_pi`` (no dt).
+
+    Why: with the firmware command clamp (``firmware.cmd_clamp_ppm``) the output saturates while the
+    baseline integrator keeps accumulating the error (windup), so the release overshoots.  Limiting
+    the integral bounds that stored correction.  The limit must stay above the steady frequency
+    correction the loop needs (oscillator error + drift): below it the offset cannot reach zero.
+    ``i_max_ppm = 0`` disables the limit and the controller is then identical to ``baseline_pi``.
+    """
+    name = "pi_anti_windup"
+    PARAMS = {**BaselinePI.PARAMS,
+              "i_max_ppm": (0.0, 0.0, 50_000.0, "integrator limit [ppm] (0 = off, identical to baseline_pi)")}
+
+    def update(self, s: ServoSample) -> float:
+        e = -float(s.offset_ns)
+        pi = self._pi
+        pi.integral += pi.ki * e
+        limit_ppb = self.params["i_max_ppm"] * 1000.0
+        if limit_ppb > 0.0 and abs(pi.integral) > limit_ppb:
+            pi.integral = math.copysign(limit_ppb, pi.integral)
+        out = pi.kp * e + pi.integral
+        self.last_error, self.last_output = e, out
+        return out
+
+
+REGISTRY: dict[str, type[Controller]] = {c.name: c for c in (BaselinePI, PITimeAware, PIAntiWindup)}
 
 
 def make_controller(name: str, params: dict[str, float] | None = None) -> Controller:

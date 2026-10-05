@@ -120,6 +120,10 @@ class FirmwareConfig:
     lock_samples: int = 3
     outlier_samples: int = 2
     delay_req_clear_ns: int = 3_000_000_000   # PORT_DELAY_REQ_CLEAR_TO
+    # Experimental, NOT in the firmware: saturate the servo command to +-cmd_clamp_ppm before it is
+    # handed to the driver.  0 = off = firmware behaviour (an out-of-range command is rejected by
+    # the driver and the servo is reset).  Keep it <= actuator.max_ratio_ppm or the driver still rejects.
+    cmd_clamp_ppm: float = 0.0
 
 
 @dataclass

@@ -93,17 +93,26 @@ residual at 24 MHz.
 
 ## 6. Controllers (`ptpsim/controllers.py`)
 
-| | `baseline_pi` (firmware) | `pi_time_aware` (experimental) |
-|---|---|---|
-| law | `I += ki·e; u = kp·e + I` | `u = kp·e + I; I += ki·dt·e` (conditional integration) |
-| `e` | −offset [ns] | −offset [ns] |
-| parameters | `kp` [ppb/ns], `ki` [ppb/ns per update] | `wn` [rad/s], `zeta`; `kp = 2ζ·wn` [s⁻¹], `ki = wn²` [s⁻²] |
-| dt | none | measured from consecutive `t1` (GM timestamps), clamped |
-| stability | none (Kconfig: tuned for ~1 s) | `wn·dt ≤ wn_ts_max` (0.35 rad): `kp·dt < 2` |
-| saturation | none: driver rejects → `clock_servo_reset` | clamp ±`sat_ppb` (400 000 ppb) + anti-windup |
-| output | absolute ppb | absolute ppb |
+| | `baseline_pi` (firmware) | `pi_time_aware` (experimental) | `pi_anti_windup` (experimental) |
+|---|---|---|---|
+| law | `I += ki·e; u = kp·e + I` | `u = kp·e + I; I += ki·dt·e` (conditional integration) | `I += ki·e; I = clamp(I, ±i_max); u = kp·e + I` |
+| `e` | −offset [ns] | −offset [ns] | −offset [ns] |
+| parameters | `kp` [ppb/ns], `ki` [ppb/ns per update] | `wn` [rad/s], `zeta`; `kp = 2ζ·wn` [s⁻¹], `ki = wn²` [s⁻²] | as baseline + `i_max_ppm` [ppm] (0 = off) |
+| dt | none | measured from consecutive `t1` (GM timestamps), clamped | none |
+| stability | none (Kconfig: tuned for ~1 s) | `wn·dt ≤ wn_ts_max` (0.35 rad): `kp·dt < 2` | as baseline |
+| saturation | none: driver rejects → `clock_servo_reset` | clamp ±`sat_ppb` (400 000 ppb) + anti-windup | integrator only (output limited by the servo's command clamp, if on) |
+| output | absolute ppb | absolute ppb | absolute ppb |
 
-Both feed the same firmware servo state machine (lock, outlier rejection, step, reset). Gain changes during a live run
+All feed the same firmware servo state machine (lock, outlier rejection, step, reset). With `i_max_ppm = 0`
+`pi_anti_windup` is bit-identical to `baseline_pi`; `i_max` must exceed the steady frequency correction, otherwise
+the offset settles at `(correction − i_max)/kp`.
+
+**Experimental servo options** (`FirmwareConfig`, applied around any controller):
+`cmd_clamp_ppm` (not in the firmware, 0 = off) saturates the command to ±limit between the controller and
+`ppb_to_scaled_ppm`, so a request beyond the actuator window is applied at the limit instead of being rejected
+(→ servo reset); non-finite requests are not clamped and still reset the servo. `step_threshold_ns` is
+`SYNC_SERVO_STEP_THRESHOLD_NS` (1 s) made configurable. The baseline overlay of the GUI always runs the unmodified
+firmware (baseline PI 0.7/0.3, `FirmwareConfig()` defaults). Gain changes during a live run
 use an explicit integrator policy (`keep`, `reset`, `bumpless`).
 Loop analysis: `ptpsim.analysis.baseline_poles(kp, ki, Ts)` gives the poles of the ideal loop
 (trace = 2 − Ts(kp+ki), det = 1 − Ts·kp); the simulated loop with the firmware's delay estimator is *less*
@@ -126,7 +135,7 @@ See the README and the docstring of `ptpsim/metrics.py` for the exact definition
 | rate varying between t2 and t3 | `test_rate_variable_between_t2_and_t3_biases_delay_estimate...` |
 | simultaneous events | `test_event_order_is_deterministic_at_equal_times`, `test_simultaneous_events_end_to_end_reproducible` |
 | asymmetry bias | `test_asymmetry_biases_true_offset_by_half_the_difference` |
-| saturation / anti-windup | `test_variant_saturates_with_anti_windup...`, `test_anti_windup_conditional_integration`, `test_out_of_window_command_resets...` |
+| saturation / anti-windup | `test_variant_saturates_with_anti_windup...`, `test_anti_windup_conditional_integration`, `test_out_of_window_command_resets...`, `tests/test_servo_options.py` (command clamp, integrator limit) |
 | interval changes | `test_live_interval_changes`, `test_delay_req_first_random...`, `test_every_n_sync_mode...` |
 | long-run precision | `test_time_precision_on_a_million_seconds`, `test_precision_of_integer_timestamps_at_large_epoch` |
 | NXP arithmetic vs C | `tests/test_c_reference.py` |

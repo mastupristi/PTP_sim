@@ -34,7 +34,7 @@ def wait(app, cond, tmo=30.0):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--trials", type=int, default=40)
-    ap.add_argument("--scenario", choices=["deterministic", "nxp", "overlay"], default="deterministic")
+    ap.add_argument("--scenario", choices=["deterministic", "nxp", "overlay", "pi_terms"], default="deterministic")
     a = ap.parse_args()
     app = QtWidgets.QApplication([])
     cfg = SimConfig()
@@ -45,6 +45,8 @@ def main():
     if a.scenario == "overlay":
         w.ctrl_combo.setCurrentText("pi_time_aware")
         w.chk_overlay.setChecked(True)
+    if a.scenario == "pi_terms":                        # default scenario with the PI-terms plot shown
+        w.chk_pi.setChecked(True)
     w.show()
     wait(app, lambda: w.n_results >= 1)
     # heartbeat: longest stall of the GUI thread
