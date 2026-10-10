@@ -26,7 +26,7 @@ from PySide6 import QtCore, QtWidgets
 from ..config import SimConfig, default_scenario, noisy_preset, set_path
 from ..controllers import POLICIES, REGISTRY
 from ..engine import interval_ps
-from .i18n import LANGS, STRINGS, T, get_lang, set_lang
+from .i18n import LANGS, STRINGS, T, get_lang, localize_change, set_lang
 from .params import ParamRow
 from .zoombox import ZoomViewBox
 from .worker import worker_main
@@ -1039,7 +1039,7 @@ class MainWindow(QtWidgets.QMainWindow):
         for t_, text in r.get("changes", []):
             for p in (self.p_delay, self.p_off):
                 ln = pg.InfiniteLine(pos=t_, angle=90, pen=pg.mkPen("#666666", style=QtCore.Qt.DashLine, width=1.5),
-                                     label=(text.replace("{", "{{").replace("}", "}}") if p is self.p_off else ""),
+                                     label=(localize_change(text).replace("{", "{{").replace("}", "}}") if p is self.p_off else ""),
                                      labelOpts={"position": 0.9, "color": "#444444"})
                 p.addItem(ln)
                 self.evt_lines.append((p, ln))
@@ -1069,15 +1069,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cv["pi_out"].setData(r["pi_t"], r["pi_out"] * k)
         self.cv["pi_applied"].setData(*step_xy(r["rate_t"], r["rate_cmd"] * k, r["t_end"]))
         limits = r.get("limits", {})
-        # each kind has its own label position along the line: close limits must not overprint
-        for key, text_key, col, style, label_pos in (
-                ("actuator", "lim_act", C_EVT, QtCore.Qt.DashDotLine, 0.04),
-                ("clamp", "lim_clamp", C_EVT, QtCore.Qt.DashLine, 0.20),
-                ("i_max", "lim_imax", C_TRUE, QtCore.Qt.DashLine, 0.36),
-                ("sat", "lim_sat", C_REF, QtCore.Qt.DashLine, 0.52)):
-            v = limits.get(key, 0.0)
-            if v <= 0.0:
-                continue
+        kinds = (("actuator", "lim_act", C_EVT, QtCore.Qt.DashDotLine),
+                 ("clamp", "lim_clamp", C_EVT, QtCore.Qt.DashLine),
+                 ("i_max", "lim_imax", C_TRUE, QtCore.Qt.DashLine),
+                 ("sat", "lim_sat", C_REF, QtCore.Qt.DashLine))
+        active = [k for k in kinds if limits.get(k[0], 0.0) > 0.0]
+        # the labels are centred on their position along the line: spread the active ones evenly so that
+        # close limits never overprint (and none is cut at the plot edge)
+        for i, (key, text_key, col, style) in enumerate(active):
+            label_pos = (i + 0.5) / len(active)
+            v = limits[key]
             for sign in (1.0, -1.0):
                 ln = pg.InfiniteLine(pos=sign * v, angle=0, pen=pg.mkPen(col, width=1, style=style),
                                      label=T(text_key, v=v) if sign > 0 else None,

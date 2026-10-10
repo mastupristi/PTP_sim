@@ -150,6 +150,9 @@ def test_pi_terms_plot_draws_the_terms_and_the_active_limits(win):
     x, y = win.cv["pi_i"].getData()
     assert x.size == win.main_res["pi_t"].size > 0 and np.max(np.abs(y)) <= 30.0
     assert len(win.lim_lines) == 6                    # +- actuator, +- clamp, +- integrator limit
+    # the three labels are spread evenly along the lines, so they cannot overprint
+    pos = sorted(ln.label.orthoPos for ln in win.lim_lines if getattr(ln, "label", None) is not None)
+    assert pos == pytest.approx([1 / 6, 3 / 6, 5 / 6])
     win.chk_pi.setChecked(False)
     assert win.lim_lines == []
 
@@ -248,3 +251,20 @@ def test_baseline_columns_are_sized_to_their_contents_when_the_overlay_appears(w
         assert win.table.columnWidth(j) >= win.table.sizeHintForColumn(j)
     win.metrics = win.base_metrics = None
     win.hide()
+
+
+def test_live_change_notes_are_localised_and_have_no_dict_repr():
+    from ptpsim.engine import Simulation
+    from ptpsim.gui import i18n
+    cfg = SimConfig.load(CONFIGS[0])
+    sim = Simulation(cfg)
+    sim.run_until(5.0)
+    sim.update_config({"controller.params.kp": 1.4}, "keep")
+    note = sim.changes[-1][1]
+    assert "{" not in note and note == "gains kp=1.4 (keep)"
+    try:
+        i18n.set_lang("it")
+        assert i18n.localize_change(note) == "guadagni kp=1.4 (keep)"
+        assert i18n.localize_change("something else") == "something else"   # unknown notes pass through
+    finally:
+        i18n.set_lang("en")

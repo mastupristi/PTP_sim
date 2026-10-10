@@ -27,6 +27,24 @@ def _s(en: str, it: str) -> dict:
     return {"en": en, "it": it}
 
 
+# Live-change notes are produced by the engine in English (they also go to events.csv); the GUI shows them
+# translated.  (engine prefix, string key); an unknown note is shown as it is.
+_CHANGE_KEYS = (("gains ", "chg_gains"), ("controller ", "chg_ctrl"), ("actuator re-initialised", "chg_act"),
+                ("GM advertises Delay_Req", "chg_gm_dreq"), ("delay mode ->", "chg_dmode"))
+
+
+def localize_change(text: str) -> str:
+    out = []
+    for note in text.split("; "):
+        for prefix, key in _CHANGE_KEYS:
+            if note.startswith(prefix):
+                out.append(T(key, rest=note[len(prefix):]))
+                break
+        else:
+            out.append(note)
+    return "; ".join(out)
+
+
 STRINGS: dict[str, dict] = {
     # --- window / tabs
     "title": _s("PTP_sim — closed-loop PTPv2 simulator (Zephyr time receiver)",
@@ -224,6 +242,11 @@ STRINGS: dict[str, dict] = {
     "lg_i": _s("I (integrator)", "I (integratore)"),
     "lg_out": _s("controller output (P + I, before the clamp)", "uscita controllore (P + I, prima del clamp)"),
     "lg_applied": _s("command applied (held)", "comando applicato (mantenuto)"),
+    "chg_gains": _s("gains {rest}", "guadagni {rest}"),
+    "chg_ctrl": _s("controller {rest}", "controllore {rest}"),
+    "chg_act": _s("actuator re-initialised at its nominal state", "attuatore reinizializzato allo stato nominale"),
+    "chg_gm_dreq": _s("GM advertises Delay_Req {rest}", "il GM annuncia Delay_Req {rest}"),
+    "chg_dmode": _s("delay mode → {rest}", "modalità delay → {rest}"),
     "lim_act": _s("actuator limit ±{v:g} ppm", "limite attuatore ±{v:g} ppm"),
     "lim_clamp": _s("command clamp ±{v:g} ppm", "clamp comando ±{v:g} ppm"),
     "lim_imax": _s("integrator limit ±{v:g} ppm", "limite integratore ±{v:g} ppm"),

@@ -652,7 +652,7 @@ class Simulation:
             notes.append(f"controller {old_name} -> {new_name} ({controller_policy})")
         elif ctrl_params:
             self.ctrl.set_params(ctrl_params, controller_policy)
-            notes.append(f"gains {ctrl_params} ({controller_policy})")
+            notes.append("gains " + ", ".join(f"{k}={v:g}" for k, v in ctrl_params.items()) + f" ({controller_policy})")
         if "actuator.kind" in overrides or "actuator.clock_hz" in overrides or "actuator.max_ratio_ppm" in overrides:
             self.act = make_actuator(c.actuator)
             self._applied_delta = self.act.effective_delta
