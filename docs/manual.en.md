@@ -46,6 +46,9 @@ The controller never sees the true values.
 └───────────────────┘ └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+![Run tab: baseline overlay, pi_per_second](img/gui_run_en.png)
+*Run tab, exploration mode. `pi_per_second` (solid) against the unmodified-firmware baseline (dashed, "Overlay baseline") on a quiet network: Sync 62.5 ms (n = −4), 100 µs initial offset, 90 s. The undershoot of the true offset is 22.9 µs against 64.6 µs for the baseline; the transient ends at 16.5 s against 15.75 s. The steady-state rows cover the last 60 s, after the transient. Regenerate with `scripts/make_gui_figures.py`.*
+
 **Language** (top right): English (default) or Italian. Switching rebuilds the window in the new language and keeps
 the current configuration (a running live session is restarted). The choice is remembered.
 
@@ -54,6 +57,9 @@ The **Zoom** row above the plots chooses which axes the zoom (wheel, right-butto
 plots (they share the time axis), **y** has one switch per plot (the rate and PI plots appear when shown). Unchecked axes keep
 their range when zooming, but dragging (pan) is never restricted. With y unchecked the plot still rescales to the data visible
 in the zoomed x range, as in "Fit view"; zooming on y with a checked plot switches that plot's y auto-range off until "Fit view".
+
+![Zoom row: x zoomed, y of the delay plot unchecked](img/gui_zoom_en.png)
+*The same run after one wheel notch on the offset plot with **y delay** unchecked: the time axis is zoomed in both plots (about 3–18 s) and the delay plot keeps its own y range (it only rescales to the visible data).*
 
 * *Delay plot*: the firmware's delay estimate (green) is **held** until the next Delay_Resp is processed, with a dot at
   every sample (so the real sampling rate is visible); the dashed black line is the physical delay of the network.
@@ -111,6 +117,8 @@ columns — the command accepted by the driver `cmd_applied_ppb` (after the clam
 
 ### 3.2 Tab "Controller"
 
+![Controller tab with pi_per_second](img/gui_controller_en.png)
+*Controller tab with `pi_per_second`: the gains `kp`, `ki` tuned at `t_ref_s` (1 s), the integrator limit and `dt_max_s`, the description of the selected law and the "Firmware servo" group.*
 **Controller** — which law drives the clock rate. All of them output an **absolute** frequency correction in ppb
 (positive = faster) from the **estimated offset** only.
 
@@ -260,12 +268,24 @@ All metrics use full-resolution data. For the true offset and the estimated offs
 * **Large initial offset**: Scenario → Initial offset 100 ms (the PI is overwhelmed: resets) or 3 s (forced alignment); or press
   *Slave PHC starts at 0*. Use View → *Transient*.
 * **Compare controllers**: select `pi_time_aware`, tick *Overlay baseline*; both see the same noise.
+  ![pi_time_aware against the baseline, noisy network](img/gui_noisy_en.png)
+  *`configs/noisy_seed1.json` (300 s, 20 ppm, 100 µs, Sync 250 ms, seed 1) with `pi_time_aware` against the baseline. True offset: transient ends at 9.61 s against 14.33 s, overshoot 12.0 % (19.2 µs) against 43.2 % (69.1 µs), steady-state RMS 189.6 ns against 185.2 ns — about the same, as the jitter sets it. The "transient end" of the *estimated* offset (284.75 s) is a noise artefact: its scatter is of the order of the 1 µs band. One seed and one band: the README table has 10 seeds.*
 * **Size the anti-windup**: Scenario → Initial offset 100 ms; Controller → Command clamp 1000 ppm; tick *PI terms*. With
   `baseline_pi` the integrator winds up to ≈ 6×10⁶ ppm and the offset overshoots to ≈ −100 ms; select `pi_anti_windup`
   and raise **i_max_ppm** from just above the oscillator error (20 ppm here): at 100 ppm the overshoot is ≈ 44 µs.
+  The two runs (`baseline_pi` then `pi_anti_windup`, i_max 100 ppm; 300 s, 20 ppm, 100 ms, clamp 1000 ppm, units ms):
+
+  ![baseline_pi winding up](img/gui_windup_en.png)
+  *`baseline_pi`: the integrator I reaches ≈ −6×10⁶ ppm while the command is clamped (1188 clamped updates) and the offset overshoots to ≈ −100 ms. It is still outside the band at the end of the run ("still outside the band"), so its steady-state rows are *not* a steady state.*
+
+  ![pi_anti_windup, i_max 100 ppm](img/gui_antiwindup_en.png)
+  *`pi_anti_windup`, i_max 100 ppm: the offset dips 44.1 µs below zero (0.04 % of the step, shown as "0.0 %" in the table) and the transient ends at 115.5 s. The integrator stays within ±100 ppm, which is invisible on this scale: the plot is dominated by P, down to −70 000 ppm, with 403 clamped updates.*
+
 * **Asymmetry bias**: Network → Asymmetry 1000 ns: true offset steady-state median → −500 ns, estimated → 0.
 * **Rate granularity**: Actuator → NXP, 24 MHz, Frequency error 5 ppm: the true offset dithers by µs.
 * **Live tuning**: Mode → Live, Start, speed 20×, change kp while it runs; choose the integrator policy first.
+  ![Live mode: kp raised during the transient](img/gui_live_en.png)
+  *Live mode (here 10×) with `baseline_pi`: kp raised from 0.7 to 1.4 at ≈ 5 s with the *keep* policy; the dashed line and the label mark the instant of the change. The table shows counters (the settling/RMS metrics are exploration-mode only). The instant of the change depends on the wall clock and varies slightly between runs.*
 
 ## 6. Configuration file (JSON)
 

@@ -1221,6 +1221,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.table.setItem(i, 0, QtWidgets.QTableWidgetItem(T(k)))
             self.table.setItem(i, 1, QtWidgets.QTableWidgetItem(txt))
             self.table.setSpan(i, 1, 1, 4)
+        for j in (3, 4):
+            self.table.setColumnHidden(j, False)            # a hidden column is not sized to its contents
         self.table.resizeColumnsToContents()
         for j in (3, 4):
             self.table.setColumnHidden(j, bm is None)       # baseline columns only with the overlay

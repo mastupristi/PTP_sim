@@ -45,6 +45,9 @@ Il controllore non vede mai i valori reali.
 └────────────────────┘ └────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+![Scheda Esecuzione: baseline sovrapposta, pi_per_second](img/gui_run_it.png)
+*Scheda Esecuzione, modalità esplorazione. `pi_per_second` (linea piena) contro la baseline del firmware non modificato (tratteggiata, "Sovrapponi baseline") su rete quieta: Sync 62,5 ms (n = −4), offset iniziale 100 µs, 90 s. L'undershoot dell'offset reale è 22,9 µs contro 64,6 µs della baseline; il transitorio finisce a 16,5 s contro 15,75 s. Le righe di regime coprono gli ultimi 60 s, dopo il transitorio. Si rigenera con `scripts/make_gui_figures.py`.*
+
 **Lingua** (in alto a destra): English (predefinita) o Italiano. Il cambio ricostruisce la finestra nella nuova lingua
 mantenendo la configurazione (una sessione live in corso viene riavviata). La scelta viene ricordata.
 
@@ -54,6 +57,9 @@ unico interruttore per tutti i grafici (condividono l'asse del tempo), **y** ha 
 compaiono quando sono visibili). Gli assi non selezionati mantengono il loro intervallo durante lo zoom, ma il trascinamento
 (pan) non è mai limitato. Con y non selezionato il grafico si riscala comunque sui dati visibili nell'intervallo x ingrandito,
 come con "Adatta vista"; lo zoom su y di un grafico selezionato spegne l'auto-range di quell'asse finché non premi "Adatta vista".
+
+![Riga Zoom: x ingrandito, y del grafico delay deselezionato](img/gui_zoom_it.png)
+*La stessa simulazione dopo uno scatto di rotella sul grafico dell'offset con **y delay** deselezionato: l'asse del tempo è ingrandito in entrambi i grafici (circa 3–18 s) e il grafico del delay mantiene il proprio intervallo y (si riscala solo sui dati visibili).*
 
 * *Grafico Delay*: la stima del delay del firmware (verde) è **tenuta** fino all'elaborazione della Delay_Resp successiva, con un
   punto a ogni campione (così si vede la frequenza reale dei campioni); la linea nera tratteggiata è il delay fisico della rete.
@@ -110,6 +116,9 @@ scrive `params.json`, `metrics.json`, `servo_samples.csv`, `delay_samples.csv`, 
 ultime due colonne — il comando accettato dal driver `cmd_applied_ppb` (dopo il clamp) e il termine proporzionale `p_ppb`.
 
 ### 3.2 Scheda "Controllore"
+
+![Scheda Controllore con pi_per_second](img/gui_controller_it.png)
+*Scheda Controllore con `pi_per_second`: i guadagni `kp`, `ki` tarati a `t_ref_s` (1 s), il limite dell'integratore e `dt_max_s`, la descrizione della legge scelta e il gruppo "Servo del firmware".*
 
 **Controllore** — la legge che comanda il rate del clock. Tutti producono una correzione di frequenza **assoluta** in ppb
 (positivo = più veloce) usando solo l'**offset stimato**.
@@ -256,13 +265,25 @@ Tutte le metriche usano i dati a piena risoluzione. Per l'offset reale e per que
 * **Offset iniziale grande**: Scenario → Offset iniziale 100 ms (il PI è sopraffatto: reset) o 3 s (riallineamento forzato); oppure
   *PHC slave parte da 0*. Usa Vista → *Transitorio*.
 * **Confrontare controllori**: scegli `pi_time_aware`, spunta *Sovrapponi baseline*; entrambi vedono lo stesso rumore.
+  ![pi_time_aware contro la baseline, rete rumorosa](img/gui_noisy_it.png)
+  *`configs/noisy_seed1.json` (300 s, 20 ppm, 100 µs, Sync 250 ms, seed 1) con `pi_time_aware` contro la baseline. Offset reale: il transitorio finisce a 9,61 s contro 14,33 s, sovraelongazione 12,0 % (19,2 µs) contro 43,2 % (69,1 µs), RMS a regime 189,6 ns contro 185,2 ns: circa uguale, perché lo fissa il jitter. La "fine transitorio" dell'offset *stimato* (284,75 s) è un artefatto del rumore: la sua dispersione è dell'ordine della banda di 1 µs. Un solo seed e una sola banda: la tabella del README ha 10 seed.*
 * **Dimensionare l'anti-windup**: Scenario → Offset iniziale 100 ms; Controllore → Clamp del comando 1000 ppm; spunta *Termini PI*.
   Con `baseline_pi` l'integratore va in windup fino a ≈ 6×10⁶ ppm e l'offset sovraelonga fino a ≈ −100 ms; scegli
   `pi_anti_windup` e alza **i_max_ppm** partendo da poco sopra l'errore dell'oscillatore (qui 20 ppm): a 100 ppm la
   sovraelongazione è ≈ 44 µs.
+  Le due simulazioni (`baseline_pi` poi `pi_anti_windup`, i_max 100 ppm; 300 s, 20 ppm, 100 ms, clamp 1000 ppm, unità ms):
+
+  ![baseline_pi in windup](img/gui_windup_it.png)
+  *`baseline_pi`: l'integratore I arriva a ≈ −6×10⁶ ppm mentre il comando è in clamp (1188 aggiornamenti in clamp) e l'offset oltrepassa fino a ≈ −100 ms. A fine simulazione è ancora fuori banda ("ancora fuori banda"), quindi le righe di regime *non* rappresentano un regime.*
+
+  ![pi_anti_windup, i_max 100 ppm](img/gui_antiwindup_it.png)
+  *`pi_anti_windup`, i_max 100 ppm: l'offset scende di 44,1 µs sotto zero (0,04 % del gradino, mostrato come "0,0 %" nella tabella) e il transitorio finisce a 115,5 s. L'integratore resta entro ±100 ppm, invisibile a questa scala: il grafico è dominato da P, fino a −70 000 ppm, con 403 aggiornamenti in clamp.*
+
 * **Bias da asimmetria**: Rete → Asimmetria 1000 ns: la mediana a regime dell'offset reale → −500 ns, dello stimato → 0.
 * **Granularità del rate**: Attuatore → NXP, 24 MHz, Errore di frequenza 5 ppm: l'offset reale oscilla di µs.
 * **Taratura live**: Modalità → Live, Start, velocità 20×, cambia kp mentre gira; scegli prima la politica dell'integratore.
+  ![Modalità live: kp alzato durante il transitorio](img/gui_live_it.png)
+  *Modalità live (qui 10×) con `baseline_pi`: kp alzato da 0,7 a 1,4 a ≈ 5 s con la politica *keep*; la linea tratteggiata e l'etichetta (in inglese nell'applicazione) segnano l'istante del cambio. La tabella mostra i contatori (le metriche di assestamento/RMS esistono solo in esplorazione). L'istante del cambio dipende dall'orologio e varia leggermente tra le esecuzioni.*
 
 ## 6. File di configurazione (JSON)
 
