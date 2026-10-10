@@ -104,7 +104,7 @@ residual at 24 MHz.
 | output | absolute ppb | absolute ppb | absolute ppb |
 
 `pi_per_second` (experimental) is `pi_anti_windup` with `ki_eff = ki·dt/t_ref_s` (`dt` measured from consecutive `t1`,
-clamped to `dt_clamp × nominal`; `t_ref_s = 1 s` by default, the interval the firmware gains are tuned for). `kp` is
+clamped to the absolute `dt_max_s` (10 s); `t_ref_s = 1 s` by default, the interval the firmware gains are tuned for). `kp` is
 not scaled: ppb/ns is already s⁻¹. `ki/t_ref_s` [s⁻²] is thus constant and the continuous damping
 `ζ = kp / (2·sqrt(ki/t_ref_s))` = 0.64 for any Sync interval, whereas in the baseline it is `0.7 / (2·sqrt(0.3/T))`:
 0.64 at 1 s, 0.32 at 250 ms, 0.16 at 62.5 ms. At `dt = t_ref_s` it is bit-identical to `pi_anti_windup`. Measured

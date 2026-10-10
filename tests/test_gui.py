@@ -135,7 +135,7 @@ def test_anti_windup_controller_is_selectable(win):
     assert c.controller.params == {"kp": 0.7, "ki": 0.3, "i_max_ppm": 0.0}
     win.ctrl_combo.setCurrentText("pi_per_second")
     assert win.build_config().controller.params == {"kp": 0.7, "ki": 0.3, "i_max_ppm": 0.0, "t_ref_s": 1.0,
-                                                    "dt_clamp": 4.0}
+                                                    "dt_max_s": 10.0}
     win.ctrl_combo.setCurrentText("baseline_pi")
 
 

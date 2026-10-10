@@ -128,8 +128,9 @@ ultime due colonne — il comando accettato dal driver `cmd_applied_ppb` (dopo i
   tarati a **t_ref**, e `ki/t_ref` [s⁻²] resta costante (**kp** non viene scalato: ppb/ns è già 1/s).
   * **t_ref_s** [s]: intervallo a cui sono tarati kp, ki (default 1 s, l'intervallo per cui sono tarati i guadagni del firmware).
     A `dt = t_ref_s` la legge è identica a `pi_anti_windup`; a 250 ms l'integratore somma ki/4 a ogni aggiornamento.
-  * **dt_clamp** []: l'intervallo misurato (da `t1` consecutivi, quindi un Sync perso dà un passo più lungo) è limitato a
-    `dt_clamp ×` l'intervallo nominale. **i_max_ppm** come in `pi_anti_windup`.
+  * **dt_max_s** [s]: l'intervallo misurato (da `t1` consecutivi, quindi un Sync perso dà un passo più lungo) è limitato a
+    questo valore assoluto (default 10 s). Mantienilo ≥ all'intervallo Sync nominale, altrimenti vengono limitati anche i
+    passi regolari. **i_max_ppm** come in `pi_anti_windup`.
   * Non protetto: `kp·dt < 2` (come nella baseline); con Sync = 2 s la simulazione diverge nello scenario quieto da 100 µs (causa non analizzata).
 * `pi_anti_windup` — la legge del PI firmware (stessi **kp**, **ki** per aggiornamento, senza dt) con un limite dell'integratore:
   `integrale += ki·e; integrale = clamp(integrale, ±i_max); u = kp·e + integrale`.

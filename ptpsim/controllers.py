@@ -252,14 +252,15 @@ class PIPerSecond(PIAntiWindup):
     firmware gains are tuned for, Kconfig help); at ``dt == t_ref_s`` the law is bit-identical to ``pi_anti_windup``.
 
     ``dt`` is the interval measured from the GM timestamps (t1 differences), so a lost Sync gives a longer
-    step; it is clamped to ``dt_clamp * nominal`` (the first sample after a gap/reset can be arbitrarily old).
+    step; it is clamped to the absolute ``dt_max_s`` (the first sample after a long gap can be arbitrarily old).
+    ``dt_max_s`` must be >= the nominal Sync interval, otherwise regular steps are clamped too.
     Not handled: the discrete loop is stable only for roughly ``kp * dt < 2``, whatever ``ki`` is
     (``pi_time_aware`` has a guard for that; this one has none, to stay close to the firmware law).
     """
     name = "pi_per_second"
     PARAMS = {**PIAntiWindup.PARAMS,
               "t_ref_s": (1.0, 0.01, 10.0, "interval at which kp, ki are tuned [s]; ki acts as ki*dt/t_ref_s"),
-              "dt_clamp": (4.0, 1.0, 100.0, "measured dt is clamped to dt_clamp * nominal interval")}
+              "dt_max_s": (10.0, 0.01, 100.0, "measured dt is clamped to this value [s] (>= nominal Sync interval)")}
 
     @property
     def ki_eff(self) -> float:
@@ -273,7 +274,7 @@ class PIPerSecond(PIAntiWindup):
     def update(self, s: ServoSample) -> float:
         e = -float(s.offset_ns)
         dt = s.sync_interval_s if s.sync_interval_s > 0 else s.nominal_interval_s
-        dt = min(dt, self.params["dt_clamp"] * s.nominal_interval_s)
+        dt = min(dt, self.params["dt_max_s"])
         pi = self._pi
         self._ki_eff = pi.ki * dt / self.params["t_ref_s"]
         pi.integral += self._ki_eff * e

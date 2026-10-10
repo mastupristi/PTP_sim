@@ -184,18 +184,21 @@ def test_per_second_pi_scales_only_the_integral_gain_with_the_measured_interval(
     out = c.update(ServoSample(offset_ns=-1000, sync_interval_s=0.25, nominal_interval_s=0.25, index=0))
     assert c.ki_eff == pytest.approx(0.075)
     assert c.integral == pytest.approx(0.075 * 1000) and out == pytest.approx(0.7 * 1000 + 75.0)
-    # a lost Sync (measured 0.5 s) doubles the step; a huge gap is clamped to dt_clamp * nominal
+    # a lost Sync (measured 0.5 s) doubles the step; a huge gap is clamped to the absolute dt_max_s
     c.update(ServoSample(offset_ns=-1000, sync_interval_s=0.5, nominal_interval_s=0.25, index=1))
     assert c.ki_eff == pytest.approx(0.15)
     c.update(ServoSample(offset_ns=-1000, sync_interval_s=900.0, nominal_interval_s=0.25, index=2))
-    assert c.ki_eff == pytest.approx(0.3 * 4 * 0.25)
+    assert c.ki_eff == pytest.approx(0.3 * 10.0)
+    c.set_params({"dt_max_s": 2.0})
+    c.update(ServoSample(offset_ns=-1000, sync_interval_s=900.0, nominal_interval_s=0.25, index=3))
+    assert c.ki_eff == pytest.approx(0.3 * 2.0)
 
 
 def test_integral_gain_per_second_is_independent_of_the_sync_interval():
     from ptpsim.controllers import PIPerSecond, ServoSample
     for n in (-4, -2, 0, 1):
         T = 2.0 ** n
-        c = PIPerSecond(kp=0.7, ki=0.3, t_ref_s=1.0, dt_clamp=100.0)
+        c = PIPerSecond(kp=0.7, ki=0.3, t_ref_s=1.0)
         c.update(ServoSample(offset_ns=-1.0, sync_interval_s=T, nominal_interval_s=T, index=0))
         assert c.ki_eff / T == pytest.approx(0.3)
 

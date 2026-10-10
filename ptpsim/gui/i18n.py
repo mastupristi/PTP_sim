@@ -92,6 +92,8 @@ STRINGS: dict[str, dict] = {
                      "does not depend on the Sync interval (kp is not scaled)",
                      "intervallo [s] a cui sono tarati kp, ki; l'integratore somma ki·dt/t_ref a ogni aggiornamento, "
                      "quindi ki/t_ref [s⁻²] non dipende dall'intervallo Sync (kp non viene scalato)"),
+    "pd_dt_max_s": _s("measured dt is clamped to this value [s]; keep it ≥ the nominal Sync interval",
+                      "il dt misurato è limitato a questo valore [s]; mantienilo ≥ all'intervallo Sync nominale"),
     "g_fw": _s("Firmware servo (clock.c)", "Servo del firmware (clock.c)"),
     "fw_clamp": _s("Command clamp (0 = off)", "Clamp del comando (0 = off)"),
     "fw_clamp_tip": _s("NOT in the firmware. Saturates the servo command to ± this value before the driver; 0 = firmware "
