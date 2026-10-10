@@ -229,14 +229,18 @@ def test_per_second_pi_bumpless_transfer_uses_the_guarded_gain():
 
 
 def test_kp_guard_helps_at_a_long_sync_interval():
-    """scenario000 at Sync 1 s, kp 1.6 / ki 0.3: unguarded the loop rings for ~1 min, with the cap it settles twice as fast."""
+    """49 ms / +20 ppm quiet scenario at Sync 1 s, kp 1.6 / ki 0.3: unguarded the loop rings for ~1 min, with the cap
+    it settles about twice as fast."""
     from ptpsim.config import SimConfig
     from ptpsim.metrics import MetricsConfig, compute_metrics
-    base = SimConfig.load(Path(__file__).parent.parent / "configs" / "scenario000.json")
+    base = SimConfig.load(Path(__file__).parent.parent / "configs" / "default_deterministic.json")
 
     def settling(kp_dt_max):
-        cfg = base.with_overrides(**{"intervals.sync_log": 0, "controller.params": {
-            **base.controller.params, "kp": 1.6, "ki": 0.3, "kp_dt_max": kp_dt_max}})
+        cfg = base.with_overrides(**{
+            "duration_s": 300.0, "intervals.sync_log": 0, "oscillator.initial_offset_ns": 49e6,
+            "oscillator.freq_error_ppb": 20_000.0, "firmware.cmd_clamp_ppm": 50_000.0,
+            "firmware.step_threshold_ns": 50_000_000, "controller.name": "pi_per_second",
+            "controller.params": {"kp": 1.6, "ki": 0.3, "i_max_ppm": 150.0, "kp_dt_max": kp_dt_max}})
         return compute_metrics(simulate(cfg), MetricsConfig(band_ns=1000.0))["true_offset"]["settling_s"]
 
     guarded, unguarded = settling(1.0), settling(0.0)

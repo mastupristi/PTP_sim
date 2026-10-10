@@ -107,7 +107,7 @@ residual at 24 MHz.
 clamped to the absolute `dt_max_s` (10 s); `t_ref_s = 1 s` by default, the interval the firmware gains are tuned for). `kp` is
 not scaled: ppb/ns is already s⁻¹. `ki/t_ref_s` [s⁻²] is thus constant and the continuous damping
 `ζ = kp / (2·sqrt(ki/t_ref_s))` = 0.64 for any Sync interval, whereas in the baseline it is `0.7 / (2·sqrt(0.3/T))`:
-0.64 at 1 s, 0.32 at 250 ms, 0.16 at 62.5 ms. At `dt = t_ref_s` it is bit-identical to `pi_anti_windup`. Measured
+0.64 at 1 s, 0.32 at 250 ms, 0.16 at 62.5 ms. At `dt = t_ref_s` (and `kp ≤ kp_dt_max`) it is bit-identical to `pi_anti_windup`. Measured
 (quiet scenario, 100 µs step, 0 ppm, 0.7 / 0.3, minimum of the true offset after the step; `tests/test_servo_options.py`
 repeats the check): baseline −64.6 µs (62.5 ms), −55.6 (125 ms), −45.9 (250 ms), −35.0 (500 ms), −30.0 (1 s);
 `pi_per_second` −22.9, −22.3, −22.9, −21.1, −30.0 µs. 
@@ -126,11 +126,14 @@ band ±2 µs; seeds settled / median settling / median final RMS):
 | 1.6 / 1.0 | 0/5 (diverges) | 3/5, 197 s, 595 ns |
 
 So the guard removes the divergence caused by a large `kp`, but it is only necessary: with a large `ki` the loop still
-rings at 1 s (last row). At Sync = 2 s the loop rings or diverges for every `kp·dt` tried (0.5-1.6, `ki` = 0.3,
-`i_max_ppm` = 0): quiet `scenario000` settles only for `kp·dt` ≤ 0.7 (overshoot 70-90 %, 37-114 s at ±1 µs) and never
-beyond, and on the noisy seeds 4/5 settle at `kp·dt` = 0.5 and none from 0.9. In a 2 s noisy run the offset estimate alternates in sign at every update and the
-delay estimate swings by ±70 µs (true delay: 1 µs); the mechanism (delay estimated from `t2`/`t3` taken across a rate
-change) is consistent with the closed-loop model but has not been isolated, so no cause is claimed.
+rings at 1 s (last row). Sync = 2 s is a different problem and the guard does not cure it: a sweep of `kp·dt` = 0.5-1.6
+at `ki` = 0.3 (run **before** the guard existed, i.e. effectively with it off, `i_max_ppm` = 0) on a quiet 49 ms / +20 ppm
+scenario (`pi_per_second`, command clamp 50 000 ppm, step threshold 50 ms) settles only for `kp·dt` ≤ 0.7 (overshoot
+70-90 %, 37-114 s at ±1 µs); on the noisy seeds 4/5 settle at `kp·dt` = 0.5 and none from 0.9. The cause is the
+delay-estimate coupling described in the README (known limitation 3; the baseline test
+`test_baseline_instability_at_long_sync_comes_from_delay_estimate_coupling`): in a 2 s noisy run the offset estimate
+alternates in sign at every update and the delay estimate swings by ±70 µs (true delay: 1 µs). Reaching it would need a
+different change (e.g. rejecting or filtering delay samples taken across a large rate change), not a limit on `kp·dt`.
 
 All feed the same firmware servo state machine (lock, outlier rejection, step, reset). With `i_max_ppm = 0`
 `pi_anti_windup` is bit-identical to `baseline_pi`; `i_max` must exceed the steady frequency correction, otherwise

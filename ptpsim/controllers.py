@@ -249,7 +249,7 @@ class PIPerSecond(PIAntiWindup):
     ``ki`` are the gains *tuned at* ``t_ref_s``: ``ki / t_ref_s`` [s^-2] is held constant, so the integrator
     adds ``ki * dt / t_ref_s`` per update and the loop shape no longer depends on the interval.
     ``kp`` is **not** scaled: ppb/ns is already 1/s, a continuous gain.  Default ``t_ref_s = 1`` (the interval the
-    firmware gains are tuned for, Kconfig help); at ``dt == t_ref_s`` the law is bit-identical to ``pi_anti_windup``.
+    firmware gains are tuned for, Kconfig help); at ``dt == t_ref_s`` (and ``kp <= kp_dt_max``) the law is bit-identical to ``pi_anti_windup``.
 
     ``dt`` is the interval measured from the GM timestamps (t1 differences), so a lost Sync gives a longer
     step; it is clamped to the absolute ``dt_max_s`` (the first sample after a long gap can be arbitrarily old).

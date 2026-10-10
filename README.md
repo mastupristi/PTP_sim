@@ -216,7 +216,7 @@ RMS and bias on a configurable final window, saturation/reset counters, divergen
 | PR #121108 ztest cases (ATCOR = period−1, closer neighbour, sweeps) | ported in the same file | ✔ verified |
 | Closed loop = analytic recursion | exact-delay run vs recursion, < 1e-3 ns | ✔ verified |
 | Identical clocks, offset only, frequency error, phase continuity, t2/t3 before FUP/Resp, pairing, rate change between t2 and t3, ordering, asymmetry bias, saturation/anti-windup, interval changes, 1e6 s precision, jitter distribution/seeds | `tests/test_engine.py`, `tests/test_units.py` | ✔ verified |
-| Command clamp (off = firmware, NaN not clamped, exact at the actuator limit), step threshold, `pi_anti_windup` (0 = baseline bit-identical, windup bound, residual below the steady correction), `pi_per_second` (bit-identical at `dt = t_ref`, `ki/dt` constant, damping independent of the Sync interval, `kp·dt` guard), P/I recording, unmodified-firmware overlay | `tests/test_servo_options.py` | ✔ verified (model only) |
+| Command clamp (off = firmware, NaN not clamped, exact at the actuator limit), step threshold, `pi_anti_windup` (0 = baseline bit-identical, windup bound, residual below the steady correction), `pi_per_second` (bit-identical at `dt = t_ref` for `kp ≤ kp_dt_max`, `ki/dt` constant, damping independent of the Sync interval, `kp·dt` guard), P/I recording, unmodified-firmware overlay | `tests/test_servo_options.py` | ✔ verified (model only) |
 | Baseline vs **hardware** | no real logs available | ✘ **not validated** |
 | Log importer / replay | needs the real instrumentation format (not in any branch) | ✘ not implemented |
 

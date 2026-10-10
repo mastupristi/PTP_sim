@@ -140,7 +140,7 @@ columns — the command accepted by the driver `cmd_applied_ppb` (after the clam
   Use it when you change the Sync interval and want the loop shape to stay the same: **kp** and **ki** are the gains
   tuned at **t_ref**, and `ki/t_ref` [s⁻²] is held constant (**kp** is not scaled: ppb/ns is already 1/s).
   * **t_ref_s** [s]: interval at which kp, ki are tuned (default 1 s, the interval the firmware gains are tuned for).
-    At `dt = t_ref_s` the law is identical to `pi_anti_windup`; at 250 ms the integrator adds ki/4 per update.
+    At `dt = t_ref_s` (and `kp ≤ kp_dt_max`) the law is identical to `pi_anti_windup`; at 250 ms the integrator adds ki/4 per update.
   * **dt_max_s** [s]: the measured interval (from consecutive `t1`, so a lost Sync gives a longer step) is clamped to
     this absolute value (default 10 s). Keep it ≥ the nominal Sync interval, or regular steps are clamped too.
     **i_max_ppm** as in `pi_anti_windup`.

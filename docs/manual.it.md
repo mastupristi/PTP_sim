@@ -141,7 +141,7 @@ ultime due colonne — il comando accettato dal driver `cmd_applied_ppb` (dopo i
   Serve quando cambi l'intervallo Sync e vuoi che la forma dell'anello resti la stessa: **kp** e **ki** sono i guadagni
   tarati a **t_ref**, e `ki/t_ref` [s⁻²] resta costante (**kp** non viene scalato: ppb/ns è già 1/s).
   * **t_ref_s** [s]: intervallo a cui sono tarati kp, ki (default 1 s, l'intervallo per cui sono tarati i guadagni del firmware).
-    A `dt = t_ref_s` la legge è identica a `pi_anti_windup`; a 250 ms l'integratore somma ki/4 a ogni aggiornamento.
+    A `dt = t_ref_s` (e `kp ≤ kp_dt_max`) la legge è identica a `pi_anti_windup`; a 250 ms l'integratore somma ki/4 a ogni aggiornamento.
   * **dt_max_s** [s]: l'intervallo misurato (da `t1` consecutivi, quindi un Sync perso dà un passo più lungo) è limitato a
     questo valore assoluto (default 10 s). Mantienilo ≥ all'intervallo Sync nominale, altrimenti vengono limitati anche i
     passi regolari. **i_max_ppm** come in `pi_anti_windup`.
