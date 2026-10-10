@@ -28,6 +28,7 @@ from ..controllers import POLICIES, REGISTRY
 from ..engine import interval_ps
 from .i18n import LANGS, STRINGS, T, get_lang, set_lang
 from .params import ParamRow
+from .zoombox import ZoomViewBox
 from .worker import worker_main
 
 UNITS = {"ns": 1.0, "µs": 1e-3, "ms": 1e-6}
@@ -449,7 +450,7 @@ class MainWindow(QtWidgets.QMainWindow):
         rl.addLayout(tb_show)
 
         pg.setConfigOptions(antialias=False, background="w", foreground="k")
-        self.pw_delay, self.pw_off, self.pw_diag, self.pw_pi = (pg.PlotWidget() for _ in range(4))
+        self.pw_delay, self.pw_off, self.pw_diag, self.pw_pi = (pg.PlotWidget(viewBox=ZoomViewBox()) for _ in range(4))
         self.p_delay, self.p_off, self.p_diag, self.p_pi = (w.getPlotItem() for w in (self.pw_delay, self.pw_off,
                                                                                       self.pw_diag, self.pw_pi))
         self.p_off.setXLink(self.p_delay)
@@ -515,6 +516,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.table.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         self._set_table_header()
+        rl.addLayout(self._build_zoom_row())
         rl.addWidget(plots, 1)                              # plots take all the height the table does not need
         rl.addWidget(self.table, 0)
         split.addWidget(right)
@@ -774,13 +776,43 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self._live_reset()
 
+    def _build_zoom_row(self) -> QtWidgets.QHBoxLayout:
+        """Which axes the wheel / right-drag zoom acts on: x is shared by all plots (they are x-linked),
+        y is chosen per plot.  The pan (left drag) is not restricted."""
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel(T("zoom_lbl")))
+        self.chk_zoom_x = QtWidgets.QCheckBox(T("zoom_x"))
+        self.chk_zoom_x.setToolTip(T("zoom_x_tip"))
+        self.chk_zoom_x.setChecked(True)
+        self.chk_zoom_x.toggled.connect(self._on_zoom_changed)
+        row.addWidget(self.chk_zoom_x)
+        self.chk_zoom_y = {}
+        for key, pw in (("delay", self.pw_delay), ("off", self.pw_off), ("diag", self.pw_diag), ("pi", self.pw_pi)):
+            c = QtWidgets.QCheckBox(T("zoom_y_" + key))
+            c.setToolTip(T("zoom_y_tip"))
+            c.setChecked(True)
+            c.setVisible(key in ("delay", "off"))        # diag / PI follow their plot's visibility
+            c.toggled.connect(self._on_zoom_changed)
+            row.addWidget(c)
+            self.chk_zoom_y[key] = c
+        row.addStretch(1)
+        self._on_zoom_changed()
+        return row
+
+    def _on_zoom_changed(self, *_):
+        zx = self.chk_zoom_x.isChecked()
+        for key, pw in (("delay", self.pw_delay), ("off", self.pw_off), ("diag", self.pw_diag), ("pi", self.pw_pi)):
+            pw.getViewBox().zoom_enabled = [zx, self.chk_zoom_y[key].isChecked()]
+
     def _on_diag_toggled(self, on):
+        self.chk_zoom_y["diag"].setVisible(on)
         self.pw_diag.setVisible(on)
         if on:
             self._share_plot_height()
         self._redraw()
 
     def _on_pi_toggled(self, on):
+        self.chk_zoom_y["pi"].setVisible(on)
         self.pw_pi.setVisible(on)
         if on:
             self._share_plot_height()

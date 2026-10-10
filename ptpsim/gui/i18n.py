@@ -179,6 +179,16 @@ STRINGS: dict[str, dict] = {
     "view_trans": _s("Transient", "Transitorio"),
     "view_steady": _s("Steady state", "Regime"),
     "show_trans": _s("Transient end line", "Riga fine transitorio"),
+    "zoom_lbl": _s("Zoom (wheel, right-drag) on:", "Zoom (rotella, trascinamento destro) su:"),
+    "zoom_x": _s("x (all plots)", "x (tutti i grafici)"),
+    "zoom_x_tip": _s("Time axis: shared by all plots. Left-drag pans both axes whatever is checked.",
+                     "Asse del tempo: condiviso da tutti i grafici. Il trascinamento sinistro sposta entrambi gli assi "
+                     "qualunque sia la selezione."),
+    "zoom_y_delay": _s("y delay", "y delay"),
+    "zoom_y_off": _s("y offset", "y offset"),
+    "zoom_y_diag": _s("y rate", "y rate"),
+    "zoom_y_pi": _s("y PI", "y PI"),
+    "zoom_y_tip": _s("Zoom the y axis of this plot only", "Zoom dell'asse y di questo solo grafico"),
     "btn_fit": _s("Fit view", "Adatta vista"),
     "lang": _s("Language:", "Lingua:"),
     # --- status

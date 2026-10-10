@@ -166,3 +166,66 @@ def test_window_fits_a_1920_px_screen(lang):
     app.processEvents()
     assert w.minimumSizeHint().width() <= 1920 - 200     # margin for a larger desktop font
     w.close()
+
+
+def _wheel(pw, delta=120):
+    from PySide6 import QtCore, QtGui
+    vp = pw.viewport()
+    pos = QtCore.QPointF(vp.width() / 2, vp.height() / 2)
+    ev = QtGui.QWheelEvent(pos, vp.mapToGlobal(pos), QtCore.QPoint(0, 0), QtCore.QPoint(0, delta), QtCore.Qt.NoButton,
+                           QtCore.Qt.NoModifier, QtCore.Qt.NoScrollPhase, False)
+    QtWidgets.QApplication.sendEvent(vp, ev)
+
+
+def test_zoom_axes_can_be_chosen_x_shared_y_per_plot(win):
+    win.show()
+    app = QtWidgets.QApplication.instance()
+    for p in (win.p_delay, win.p_off):                # fixed ranges: no autorange follows the visible x
+        p.getViewBox().disableAutoRange()
+        p.getViewBox().setAutoVisible(y=False)
+        p.setXRange(0, 100, padding=0)
+        p.setYRange(-50, 50, padding=0)
+    app.processEvents()
+
+    def spans():
+        r = [p.getViewBox().viewRange() for p in (win.p_delay, win.p_off)]
+        return [(round(v[0][1] - v[0][0], 6), round(v[1][1] - v[1][0], 6)) for v in r]
+
+    def zoom(x, yd, yo):
+        win.chk_zoom_x.setChecked(x)
+        win.chk_zoom_y["delay"].setChecked(yd)
+        win.chk_zoom_y["off"].setChecked(yo)
+        for p in (win.p_delay, win.p_off):
+            p.setXRange(0, 100, padding=0)
+            p.setYRange(-50, 50, padding=0)
+        app.processEvents()
+        _wheel(win.pw_delay)
+        app.processEvents()
+        return spans()
+
+    (xd, yd), (xo, yo) = zoom(True, True, True)
+    assert xd < 100 and xo == xd and yd < 100 and yo == 100          # x is linked; y only on the plot under the mouse
+    (xd, yd), (xo, yo) = zoom(True, False, True)
+    assert xd < 100 and xo == xd and yd == 100                        # y of this plot not zoomed
+    (xd, yd), (xo, yo) = zoom(False, True, True)
+    assert xd == 100 and xo == 100 and yd < 100                       # x not zoomed in any plot
+    assert zoom(False, False, False) == [(100, 100), (100, 100)]
+    win.chk_zoom_x.setChecked(True)
+    win.chk_zoom_y["delay"].setChecked(True)
+    win.chk_zoom_y["off"].setChecked(True)
+    win.hide()
+
+
+def test_zoom_checkboxes_follow_the_visibility_of_the_optional_plots(win):
+    win.show()
+    assert win.chk_zoom_y["diag"].isHidden() and win.chk_zoom_y["pi"].isHidden()
+    win.chk_diag.setChecked(True)
+    win.chk_pi.setChecked(True)
+    assert not win.chk_zoom_y["diag"].isHidden() and not win.chk_zoom_y["pi"].isHidden()
+    win.chk_zoom_y["pi"].setChecked(False)
+    assert win.pw_pi.getViewBox().zoom_enabled == [True, False]
+    win.chk_zoom_y["pi"].setChecked(True)
+    win.chk_diag.setChecked(False)
+    win.chk_pi.setChecked(False)
+    assert win.chk_zoom_y["diag"].isHidden() and win.chk_zoom_y["pi"].isHidden()
+    win.hide()
