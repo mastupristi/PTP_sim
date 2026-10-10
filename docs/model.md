@@ -132,8 +132,43 @@ scenario (`pi_per_second`, command clamp 50 000 ppm, step threshold 50 ms) settl
 70-90 %, 37-114 s at ±1 µs); on the noisy seeds 4/5 settle at `kp·dt` = 0.5 and none from 0.9. The cause is the
 delay-estimate coupling described in the README (known limitation 3; the baseline test
 `test_baseline_instability_at_long_sync_comes_from_delay_estimate_coupling`): in a 2 s noisy run the offset estimate
-alternates in sign at every update and the delay estimate swings by ±70 µs (true delay: 1 µs). Reaching it would need a
-different change (e.g. rejecting or filtering delay samples taken across a large rate change), not a limit on `kp·dt`.
+alternates in sign at every update and the delay estimate swings by ±70 µs (true delay: 1 µs). Reaching it takes a different
+change, not a limit on `kp·dt`: the experimental `firmware.delay_rate_comp` below.
+
+**Delay compensated for the clock rate** (`firmware.delay_rate_comp`, **not in the firmware**, off by default). The
+firmware computes `delay = ((t2−t3)+(t4−t1))/2` with the latest `t1, t2` and a later `t3`. With offset `x(t)` (slave − GM)
+this is `d + (x(t2) − x(t3))/2 = d − rate·(t3 − t2)/2` on a constant network: at +20 ppm and `t3 − t2` up to 2 s the
+sample is low by up to 20 µs (tested open loop). Since the offset is `t2 − t1 − delay`, that error feeds the servo and,
+at Sync 2 s, the loop diverges. The option adds `rate·(t3 − t2)/2` back, using only quantities the firmware has: `rate`
+is the slope of `t2 − t1` between the last two Syncs (the delay cancels) plus the change of the command the servo has just
+issued (`_last_cmd_ppb`, which is 0 after a reset). The history is cleared on a clock step and while the option is off.
+The baseline overlay never uses it. Measured (`default_deterministic`, 100 µs step, +20 ppm, 600 s, 0.7 / 0.3, band
+±1 µs; settling / overshoot / range resets; `pi_per_second` has `kp_dt_max` = 1, so kp_eff = 0.5 at 2 s):
+
+| controller | Sync | option off | option on |
+|---|---|---|---|
+| baseline_pi | 2 s | diverges, 140 resets | 26.5 s, 87 %, 0 |
+| baseline_pi | 1 s | 13.7 s, 24 % | 10.9 s, 21 % |
+| baseline_pi | 250 ms | 14.6 s, 43 % | 15.1 s, 43 % |
+| pi_per_second | 2 s | diverges, 276 resets | 12.7 s, 108 %, 0 |
+| pi_per_second | 1 s | 13.7 s, 24 % | 10.9 s, 21 % |
+
+and on `noisy_seed1` (5 seeds, 600 s, band ±2 µs; settled seeds / median settling / median final RMS):
+
+| controller | Sync | option off | option on |
+|---|---|---|---|
+| baseline_pi | 2 s | 0/5, 1129 resets | 3/5, 534 s, 671 ns, 0 resets |
+| baseline_pi | 1 s | 5/5, 13.1 s, 288 ns | 5/5, 10.5 s, 295 ns |
+| baseline_pi | 62.5 ms | 5/5, 14.4 s, 202 ns | 5/5, 14.4 s, 285 ns |
+| pi_per_second | 2 s | 0/5, 1398 resets | 3/5, 510 s, 605 ns, 0 resets |
+| pi_per_second | 62.5 ms | 5/5, 12.0 s, 125 ns | 5/5, 12.0 s, 182 ns |
+
+It removes the divergence, but it is not a free improvement: the rate comes from a single pair of Syncs, so it carries
+their timestamp noise (a short estimate puts the correction noise at the order of the timestamp noise, whatever the Sync interval), and the
+final RMS grows by 15-45 % at short Sync intervals; this is why it is off by default and meant for Sync ≥ 1 s. At 2 s the
+loop is stable but poorly damped (87-108 % overshoot quiet), and in the noisy runs the 2 seeds that do not settle in
+±2 µs are noise-limited, not diverging: over 1200 s the RMS stays at 450-960 ns in every 300 s window (peaks 2-6 µs)
+with no trend and no resets.
 
 All feed the same firmware servo state machine (lock, outlier rejection, step, reset). With `i_max_ppm = 0`
 `pi_anti_windup` is bit-identical to `baseline_pi`; `i_max` must exceed the steady frequency correction, otherwise

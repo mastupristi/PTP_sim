@@ -133,7 +133,10 @@ Findings (model predictions, with the evidence in the tests/results):
    up to ±2 µs on a 1 µs delay during the transient).
 3. **At Sync ≥ 2 s the baseline diverges in the model** (Delay_Req 2 s): the ideal loop's poles are stable, but with the
    firmware's delay estimator the loop is not (`test_baseline_instability_at_long_sync_comes_from_delay_estimate_coupling`:
-   stable with exact delay, resets forever with the estimated one). A hypothesis to check on hardware.
+   stable with exact delay, resets forever with the estimated one). A hypothesis to check on hardware. The experimental,
+   non-firmware option `firmware.delay_rate_comp` (off by default) removes it by adding `rate·(t3−t2)/2` back to the delay
+   sample (rate from `t2−t1` of consecutive Syncs plus the firmware's own command change); numbers and its noise cost in
+   `docs/model.md`.
 4. **Large initial offsets:** between ≈ 50 ms and 1 s the PI is not clamped: its first output is (kp+ki)·offset, so it asks for > 50 000 ppm and the NXP
    driver rejects it → `clock_servo_reset()` loop (the 100 ms outlier rule only applies after lock); beyond 1 s the
    forced alignment (`clock_step`) takes over. Clamping the command (experimental option) removes the reset loop but,
@@ -216,7 +219,7 @@ RMS and bias on a configurable final window, saturation/reset counters, divergen
 | PR #121108 ztest cases (ATCOR = period−1, closer neighbour, sweeps) | ported in the same file | ✔ verified |
 | Closed loop = analytic recursion | exact-delay run vs recursion, < 1e-3 ns | ✔ verified |
 | Identical clocks, offset only, frequency error, phase continuity, t2/t3 before FUP/Resp, pairing, rate change between t2 and t3, ordering, asymmetry bias, saturation/anti-windup, interval changes, 1e6 s precision, jitter distribution/seeds | `tests/test_engine.py`, `tests/test_units.py` | ✔ verified |
-| Command clamp (off = firmware, NaN not clamped, exact at the actuator limit), step threshold, `pi_anti_windup` (0 = baseline bit-identical, windup bound, residual below the steady correction), `pi_per_second` (bit-identical at `dt = t_ref` for `kp ≤ kp_dt_max`, `ki/dt` constant, damping independent of the Sync interval, `kp·dt` guard), P/I recording, unmodified-firmware overlay | `tests/test_servo_options.py` | ✔ verified (model only) |
+| Command clamp (off = firmware, NaN not clamped, exact at the actuator limit), step threshold, `pi_anti_windup` (0 = baseline bit-identical, windup bound, residual below the steady correction), `firmware.delay_rate_comp` (open-loop bias removed, Sync 2 s stable, off = bit-identical, overlay never uses it), `pi_per_second` (bit-identical at `dt = t_ref` for `kp ≤ kp_dt_max`, `ki/dt` constant, damping independent of the Sync interval, `kp·dt` guard), P/I recording, unmodified-firmware overlay | `tests/test_servo_options.py` | ✔ verified (model only) |
 | Baseline vs **hardware** | no real logs available | ✘ **not validated** |
 | Log importer / replay | needs the real instrumentation format (not in any branch) | ✘ not implemented |
 

@@ -286,6 +286,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._row("fw_step", grid, 1, "fw_step", ["firmware.step_threshold_ns"], 1e-6, 1000.0,
                   c.firmware.step_threshold_ns / 1e9, 0.1, decimals=6, suffix="s", scale=1e9, log=True,
                   tip_key="fw_step_tip")
+        self.chk_dcomp = QtWidgets.QCheckBox(T("fw_dcomp"))
+        self.chk_dcomp.setToolTip(T("fw_dcomp_tip"))
+        self.chk_dcomp.setChecked(c.firmware.delay_rate_comp)
+        self.chk_dcomp.toggled.connect(lambda *_: self._on_param_changed(None, 0.0, "firmware.delay_rate_comp"))
+        grid.addWidget(self.chk_dcomp, 2, 0, 1, 3)
         lay.addWidget(g)
         lay.addStretch(1)
         self._build_ctrl_rows(c.controller.name, c.controller.params)
@@ -599,6 +604,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 ov.update(self._row_overrides(row))
         ov["intervals.delay_mode"] = "interval" if self.delay_mode.currentIndex() == 0 else "every_n_sync"
         ov["intervals.delay_rearm_from_handling"] = self.chk_rearm.isChecked()
+        ov["firmware.delay_rate_comp"] = self.chk_dcomp.isChecked()
         ov["actuator.kind"] = "ideal" if self.act_combo.currentIndex() == 0 else "nxp"
         if "root" in self._dirty:
             ov["actuator.clock_hz"] = int(self.root_combo.currentData())
@@ -654,7 +660,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.rows[k].set_config_value(v)
         for w, fn in ((self.delay_mode, lambda: self.delay_mode.setCurrentIndex(0 if c.intervals.delay_mode == "interval" else 1)),
                       (self.act_combo, lambda: self.act_combo.setCurrentIndex(0 if c.actuator.kind == "ideal" else 1)),
-                      (self.chk_rearm, lambda: self.chk_rearm.setChecked(c.intervals.delay_rearm_from_handling))):
+                      (self.chk_rearm, lambda: self.chk_rearm.setChecked(c.intervals.delay_rearm_from_handling)),
+                      (self.chk_dcomp, lambda: self.chk_dcomp.setChecked(c.firmware.delay_rate_comp))):
             w.blockSignals(True)
             fn()
             w.blockSignals(False)

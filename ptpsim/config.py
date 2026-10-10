@@ -124,6 +124,9 @@ class FirmwareConfig:
     # handed to the driver.  0 = off = firmware behaviour (an out-of-range command is rejected by
     # the driver and the servo is reset).  Keep it <= actuator.max_ratio_ppm or the driver still rejects.
     cmd_clamp_ppm: float = 0.0
+    # Experimental, NOT in the firmware: correct the delay sample for the clock moving between t2 and t3
+    # (see ``Simulation._ptp_clock_delay``).  False = firmware behaviour.
+    delay_rate_comp: bool = False
 
 
 @dataclass

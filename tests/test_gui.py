@@ -268,3 +268,15 @@ def test_live_change_notes_are_localised_and_have_no_dict_repr():
         assert i18n.localize_change("something else") == "something else"   # unknown notes pass through
     finally:
         i18n.set_lang("en")
+
+
+def test_delay_rate_comp_checkbox_round_trips_and_defaults_to_off(win):
+    win._apply_cfg_to_widgets(SimConfig.load(CONFIGS[0]))
+    assert not win.chk_dcomp.isChecked() and not win.build_config().firmware.delay_rate_comp
+    win.chk_dcomp.setChecked(True)
+    assert win.build_config().firmware.delay_rate_comp
+    on = win.build_config()
+    win._apply_cfg_to_widgets(on)                                          # a loaded config is shown as it is
+    assert win.chk_dcomp.isChecked() and win.build_config().to_dict() == on.to_dict()
+    win._apply_cfg_to_widgets(SimConfig.load(CONFIGS[0]))
+    assert not win.chk_dcomp.isChecked()

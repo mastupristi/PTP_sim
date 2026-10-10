@@ -508,6 +508,53 @@ def test_baseline_instability_at_long_sync_comes_from_delay_estimate_coupling():
     assert r2.counters["range_resets"] > 20 or np.max(np.abs(r2.true_offset_ns(np.linspace(500, 600, 400)))) > 1e4
 
 
+def _open_loop_delay_error(comp: bool) -> np.ndarray:
+    """Delay estimate minus the true delay [ns] of an uncontrolled +20 ppm slave at Sync 2 s (symmetric 1 us)."""
+    cfg = no_control(quiet_cfg(**{"intervals.sync_log": 1, "duration_s": 200.0,
+                                  "oscillator.freq_error_ppb": 20_000.0, "oscillator.initial_offset_ns": 0.0,
+                                  "firmware.delay_rate_comp": comp}))
+    r = simulate(cfg)
+    return (np.asarray(r.delay_est_ns) - np.asarray(r.delay_true_sample_ns))[3:]
+
+
+def test_delay_rate_comp_removes_the_bias_of_a_moving_clock_open_loop():
+    """The firmware pairs the latest (t1, t2) with a later t3: offset(t2) - offset(t3) = -rate * (t3 - t2) leaks into
+    the delay (half of it).  +20 ppm and t3 - t2 up to 2 s: the sample is low by up to 20 us.  The compensation
+    (rate from t2 - t1 of consecutive Syncs, no truth) brings it back to the true delay, which also fixes the sign."""
+    plain, comp = _open_loop_delay_error(False), _open_loop_delay_error(True)
+    assert plain.size > 50 and np.max(plain) <= 1.0 and np.min(plain) < -5_000.0     # low, by up to ~20 us
+    assert np.max(np.abs(comp)) < 5.0
+
+
+def test_delay_rate_comp_fixes_the_baseline_instability_at_sync_2s():
+    """Counterpart of the test above: same scenario, flag on -> no range resets, converged."""
+    cfg = quiet_cfg(**{"intervals.sync_log": 1, "duration_s": 600.0, "oscillator.initial_offset_ns": 100_000.0,
+                       "oscillator.freq_error_ppb": 20_000.0, "firmware.delay_rate_comp": True})
+    r = simulate(cfg)
+    assert r.counters["range_resets"] == 0 and r.counters["resets"] == 0
+    assert np.max(np.abs(r.true_offset_ns(np.linspace(300, 600, 1000)))) < 100.0
+
+
+def test_delay_rate_comp_off_is_bit_identical_to_the_firmware_model():
+    cfg = quiet_cfg(**{"intervals.sync_log": 0, "duration_s": 60.0, "oscillator.initial_offset_ns": 100_000.0,
+                       "oscillator.freq_error_ppb": 20_000.0})
+    a, b = simulate(cfg), simulate(cfg.with_overrides(**{"firmware.delay_rate_comp": False}))
+    for name in ("servo_cmd_ppb", "servo_offset_est_ns", "delay_est_ns", "servo_offset_true_ns"):
+        assert np.array_equal(getattr(a, name), getattr(b, name), equal_nan=True), name
+
+
+def test_delay_rate_comp_can_be_switched_on_live_without_a_stale_history():
+    cfg = quiet_cfg(**{"intervals.sync_log": 1, "duration_s": 400.0, "oscillator.initial_offset_ns": 100_000.0,
+                       "oscillator.freq_error_ppb": 20_000.0})
+    sim = Simulation(cfg)
+    sim.run_until(50.0)
+    assert sim.fw_prev_x is None and sim.fw_rate_est is None               # nothing kept while the option is off
+    sim.update_config({"firmware.delay_rate_comp": True})
+    sim.run_until(400.0)
+    r = sim.result()
+    assert np.max(np.abs(r.true_offset_ns(np.linspace(300, 400, 400)))) < 100.0
+
+
 # ------------------------------------------------------------------ live parameter changes
 
 @pytest.mark.parametrize("policy", ["keep", "reset", "bumpless"])

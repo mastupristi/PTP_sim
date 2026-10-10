@@ -121,6 +121,16 @@ STRINGS: dict[str, dict] = {
                        "NON nel firmware. Satura il comando del servo a ± questo valore prima del driver; 0 = "
                        "comportamento del firmware (un comando oltre il limite dell'attuatore è rifiutato e il servo "
                        "si azzera). L'integratore del PI non lo sa: va in windup se il controllore non lo limita."),
+    "fw_dcomp": _s("Delay compensated for the clock rate (NOT in the firmware)",
+                   "Delay compensato per il rate del clock (NON nel firmware)"),
+    "fw_dcomp_tip": _s("NOT in the firmware. The delay sample pairs the latest t1/t2 with a later t3 while the clock is "
+                       "moving, which biases it by rate·(t3−t2)/2 and makes the firmware PI diverge at Sync ≥ 2 s. "
+                       "This option adds that term back, with the rate taken from t2−t1 of the last two Syncs plus the "
+                       "change of the firmware's own command. Costs some noise at short Sync intervals.",
+                       "NON nel firmware. Il campione di delay accoppia gli ultimi t1/t2 con un t3 successivo mentre il "
+                       "clock si muove: lo falsa di rate·(t3−t2)/2 e fa divergere il PI del firmware a Sync ≥ 2 s. "
+                       "Questa opzione aggiunge il termine, con il rate ricavato da t2−t1 degli ultimi due Sync più la "
+                       "variazione del comando emesso dal firmware. Costa un po' di rumore ai Sync corti."),
     "fw_step": _s("Step threshold |offset|", "Soglia di step |offset|"),
     "fw_step_tip": _s("Above this |offset| the firmware steps the clock (forced alignment) and resets the servo. "
                       "Firmware: 1 s (SYNC_SERVO_STEP_THRESHOLD_NS, clock.c:50).",

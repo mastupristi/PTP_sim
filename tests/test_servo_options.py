@@ -151,6 +151,9 @@ def test_overlay_is_the_unmodified_firmware():
     assert b.oscillator == mod.oscillator and b.network == mod.network and b.seed == mod.seed
     clamped_baseline = cfg.with_overrides(**{"firmware.cmd_clamp_ppm": 100.0})
     assert overlay_config(clamped_baseline).firmware == FirmwareConfig()
+    compensated = cfg.with_overrides(**{"firmware.delay_rate_comp": True})
+    assert overlay_config(compensated).firmware == FirmwareConfig()    # the overlay never gets the experimental option
+    assert not overlay_config(compensated).firmware.delay_rate_comp
 
 
 def test_live_overlay_does_not_receive_firmware_or_controller_changes():

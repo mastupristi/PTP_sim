@@ -162,7 +162,13 @@ columns — the command accepted by the driver `cmd_applied_ppb` (after the clam
 * **Step threshold |offset|** (`firmware.step_threshold_ns`, firmware 1 s = `SYNC_SERVO_STEP_THRESHOLD_NS`): above it
   the firmware steps the clock (forced alignment, §3.4) and resets the servo. The `|delay| > 1 s` rejection is unchanged.
 
-Both can be changed in live mode; the baseline overlay keeps the unmodified firmware values.
+* **Delay compensated for the clock rate** (`firmware.delay_rate_comp`, default off) — **not in the firmware**: adds
+  `rate·(t3−t2)/2` back to each delay sample (the firmware pairs the latest Sync with a later `t3` while the clock moves),
+  with the rate taken from `t2−t1` of the last two Syncs plus the change of the firmware's own command. It removes the
+  divergence of the firmware PI at Sync 2 s, at the price of some noise at short Sync intervals (details and numbers in
+  `docs/model.md`).
+
+All can be changed in live mode; the baseline overlay keeps the unmodified firmware values.
 
 Changing the controller in live mode builds the new one with its defaults (plus the values shown); the integrator policy
 decides what is carried over.

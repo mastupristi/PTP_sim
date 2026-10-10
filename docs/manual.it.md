@@ -163,7 +163,13 @@ ultime due colonne — il comando accettato dal driver `cmd_applied_ppb` (dopo i
 * **Soglia di step |offset|** (`firmware.step_threshold_ns`, firmware 1 s = `SYNC_SERVO_STEP_THRESHOLD_NS`): oltre questa soglia
   il firmware fa uno step del clock (riallineamento forzato, §3.4) e azzera il servo. Il rifiuto `|delay| > 1 s` non cambia.
 
-Entrambi si possono cambiare in modalità live; la baseline sovrapposta mantiene i valori del firmware non modificato.
+* **Delay compensato per il rate del clock** (`firmware.delay_rate_comp`, default off) — **non presente nel firmware**:
+  riaggiunge `rate·(t3−t2)/2` a ogni campione di delay (il firmware accoppia l'ultimo Sync con un `t3` successivo mentre il
+  clock si muove), con il rate ricavato da `t2−t1` degli ultimi due Sync più la variazione del comando emesso dal firmware.
+  Elimina la divergenza del PI del firmware a Sync 2 s, al prezzo di un po' di rumore ai Sync corti (dettagli e numeri in
+  `docs/model.md`).
+
+Tutti si possono cambiare in modalità live; la baseline sovrapposta mantiene i valori del firmware non modificato.
 
 Cambiando controllore in live, il nuovo parte coi suoi default (più i valori mostrati); la politica dell'integratore decide cosa si riporta.
 

@@ -133,6 +133,11 @@ class Simulation:
         self.fw_t2 = 0
         self.fw_t2_phys = 0                      # physical instant of that t2 (truth, for analysis only)
         self.fw_mean_delay = 0                   # ns (C stores ns<<16; 0 == "no delay yet")
+        # experimental delay_rate_comp (not in the firmware): previous t2 - t1 / t1 and the relative clock rate
+        # (slave vs GM, dimensionless) expected between the latest t2 and the next t3
+        self.fw_prev_x: int | None = None
+        self.fw_prev_t1 = 0
+        self.fw_rate_est: float | None = None
         self.fw_delay_list: dict[int, dict] = {}  # port->delay_req_list (seq16 -> entry)
         self.fw_lock_samples = 0
         self.fw_outliers = 0
@@ -372,6 +377,24 @@ class Simulation:
 
     # clock.c: clock_synchronize_with_delay -----------------------------------------------
     def _clock_synchronize(self, ingress: int, egress: int, dt: float, nominal: float, t_arr: int) -> None:
+        if not self.cfg.firmware.delay_rate_comp:
+            self.fw_prev_x = self.fw_rate_est = None          # no stale history if the option is switched on live
+            self._clock_synchronize_fw(ingress, egress, dt, nominal, t_arr)
+            return
+        # experimental: the clock rate that will hold after this update, from firmware data only.  Before the
+        # update the rate is the slope of t2 - t1 between the last two Syncs (the delay cancels); the update
+        # then adds the change of the command it issues (``_last_cmd_ppb`` is 0 after a reset, so a reset counts).
+        x = ingress - egress
+        r_before = None if self.fw_prev_x is None else (x - self.fw_prev_x) / (egress - self.fw_prev_t1)
+        self.fw_prev_x, self.fw_prev_t1 = x, egress
+        steps, cmd0 = self.counters["steps"], self._last_cmd_ppb
+        self._clock_synchronize_fw(ingress, egress, dt, nominal, t_arr)
+        if self.counters["steps"] != steps:                   # the clock was stepped: the history is meaningless
+            self.fw_prev_x = self.fw_rate_est = None
+        else:
+            self.fw_rate_est = None if r_before is None else r_before + (self._last_cmd_ppb - cmd0) * 1e-9
+
+    def _clock_synchronize_fw(self, ingress: int, egress: int, dt: float, nominal: float, t_arr: int) -> None:
         self.fw_t1 = egress
         self.fw_t2 = ingress
         self.fw_t2_phys = t_arr
@@ -610,6 +633,10 @@ class Simulation:
         if self.fw_t1 == 0 or self.fw_t2 == 0:
             return
         delay = _trunc_div2((self.fw_t2 - egress) + (ingress - self.fw_t1))
+        if self.cfg.firmware.delay_rate_comp and self.fw_rate_est is not None:
+            # (t2 - t3) contains the clock motion since t2: offset(t2) - offset(t3) = -rate * (t3 - t2); half of
+            # it ends up in the delay.  Add it back (t3 - t2 is read on the slave clock, rate << 1).
+            delay += int(round(self.fw_rate_est * (egress - self.fw_t2) / 2))
         if abs(delay) > 1_000_000_000:
             self._log("delay_ignored", f"{delay} ns")
             return
