@@ -521,7 +521,7 @@ def test_live_controller_switch_both_directions(policy):
     pre = sim.ctrl.integral
     sim.update_config({"controller.name": "pi_time_aware", "controller.params.wn": 1.0,
                        "controller.params.zeta": 1.0, "controller.params.sat_ppb": 400000.0,
-                       "controller.params.wn_ts_max": 0.35, "controller.params.dt_clamp": 4.0}, policy)
+                       "controller.params.wn_ts_max": 0.35, "controller.params.dt_max_s": 10.0}, policy)
     assert sim.ctrl.name == "pi_time_aware" and set(sim.cfg.controller.params) == set(sim.ctrl.params)
     if policy == "keep":
         assert sim.ctrl.integral == pytest.approx(pre)

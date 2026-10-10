@@ -121,8 +121,8 @@ ultime due colonne — il comando accettato dal driver `cmd_applied_ppb` (dopo i
   * **sat_ppb** [ppb]: limite del comando (deve restare sotto 50 000 ppm = 50 000 000 ppb); l'integratore si congela finché l'uscita è
     satura e l'errore la spingerebbe oltre (anti-windup).
   * **wn_ts_max** [rad]: limita la banda a `wn·dt ≤ wn_ts_max` perché l'anello campionato resti stabile (`kp·dt < 2`).
-  * **dt_clamp** []: l'intervallo misurato da `t1` consecutivi è limitato a `dt_clamp ×` l'intervallo Sync nominale (protezione
-    contro i messaggi persi).
+  * **dt_max_s** [s]: l'intervallo misurato da `t1` consecutivi è limitato a questo valore assoluto (default 10 s; protezione
+    contro i messaggi persi). Mantienilo ≥ all'intervallo Sync nominale.
 * `pi_per_second` — `pi_anti_windup` con il guadagno integrale scalato dall'intervallo Sync: `integrale += (ki·dt/t_ref)·e`.
   Serve quando cambi l'intervallo Sync e vuoi che la forma dell'anello resti la stessa: **kp** e **ki** sono i guadagni
   tarati a **t_ref**, e `ki/t_ref` [s⁻²] resta costante (**kp** non viene scalato: ppb/ns è già 1/s).

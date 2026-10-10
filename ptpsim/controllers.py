@@ -157,7 +157,7 @@ class PITimeAware(Controller):
               "zeta": (1.0, 0.1, 5.0, "damping ratio []"),
               "sat_ppb": (400_000.0, 1.0, 5e7, "command limit [ppb] (must stay below the actuator limit)"),
               "wn_ts_max": (0.35, 0.01, 1.0, "max wn * dt [rad] (stability guard, kp*dt < 2)"),
-              "dt_clamp": (4.0, 1.0, 100.0, "measured dt is clamped to dt_clamp * nominal interval")}
+              "dt_max_s": (10.0, 0.01, 100.0, "measured dt is clamped to this value [s] (>= nominal Sync interval)")}
 
     def __init__(self, **params):
         super().__init__(**params)
@@ -180,7 +180,7 @@ class PITimeAware(Controller):
     def update(self, s: ServoSample) -> float:
         e = -float(s.offset_ns)
         dt = s.sync_interval_s if s.sync_interval_s > 0 else s.nominal_interval_s
-        dt = min(dt, self.params["dt_clamp"] * s.nominal_interval_s)
+        dt = min(dt, self.params["dt_max_s"])
         self._wn = min(self.params["wn"], self.params["wn_ts_max"] / dt)
         sat = self.params["sat_ppb"]
         i_new = self._i + self.ki * dt * e

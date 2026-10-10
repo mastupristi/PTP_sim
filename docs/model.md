@@ -98,7 +98,7 @@ residual at 24 MHz.
 | law | `I += ki·e; u = kp·e + I` | `u = kp·e + I; I += ki·dt·e` (conditional integration) | `I += ki·e; I = clamp(I, ±i_max); u = kp·e + I` |
 | `e` | −offset [ns] | −offset [ns] | −offset [ns] |
 | parameters | `kp` [ppb/ns], `ki` [ppb/ns per update] | `wn` [rad/s], `zeta`; `kp = 2ζ·wn` [s⁻¹], `ki = wn²` [s⁻²] | as baseline + `i_max_ppm` [ppm] (0 = off) |
-| dt | none | measured from consecutive `t1` (GM timestamps), clamped | none |
+| dt | none | measured from consecutive `t1` (GM timestamps), clamped to `dt_max_s` | none |
 | stability | none (Kconfig: tuned for ~1 s) | `wn·dt ≤ wn_ts_max` (0.35 rad): `kp·dt < 2` | as baseline |
 | saturation | none: driver rejects → `clock_servo_reset` | clamp ±`sat_ppb` (400 000 ppb) + anti-windup | integrator only (output limited by the servo's command clamp, if on) |
 | output | absolute ppb | absolute ppb | absolute ppb |

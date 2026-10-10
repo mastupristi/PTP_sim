@@ -68,7 +68,7 @@ def test_controller_switch_builds_the_new_parameter_set(win):
     win.ctrl_combo.setCurrentText("pi_time_aware")
     c = win.build_config()
     assert c.controller.name == "pi_time_aware" and set(c.controller.params) == {
-        "wn", "zeta", "sat_ppb", "wn_ts_max", "dt_clamp"}
+        "wn", "zeta", "sat_ppb", "wn_ts_max", "dt_max_s"}
     win.ctrl_combo.setCurrentText("baseline_pi")
     assert win.build_config().controller.params == {"kp": 0.7, "ki": 0.3}
 

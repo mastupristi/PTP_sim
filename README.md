@@ -109,7 +109,7 @@ Sync 0.25 s (9.5–9.6 s vs 14.6–17.3 s); at **Sync 0.5 s it is on par** (12.2
 At Sync ≥ 2 s the baseline diverges in the model while the variant settles in 24–83 s. The noisy-scenario RMS
 is set by the path jitter and is essentially the same for both. See the full tables for Delay_Req sweeps,
 actuators and message loss: with 5 % loss the variant still settles faster (9.3 vs 14.1 s), but with **20 % loss it is
-worse** (RMS 427 vs 307 ns, 280 s vs 16 s settling) — it is not claimed better there.
+worse** (RMS 426 vs 307 ns, 280 s vs 16 s settling) — it is not claimed better there.
 
 ![step response](docs/img/step_response.png)
 ![sync sweep](docs/img/sync_sweep.png)

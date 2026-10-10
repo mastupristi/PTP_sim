@@ -82,8 +82,6 @@ STRINGS: dict[str, dict] = {
     "pd_sat_ppb": _s("command limit [ppb] (must stay below the actuator limit)",
                      "limite del comando [ppb] (deve restare sotto il limite dell'attuatore)"),
     "pd_wn_ts_max": _s("max wn·dt [rad] (stability guard, kp·dt < 2)", "max wn·dt [rad] (guardia di stabilità, kp·dt < 2)"),
-    "pd_dt_clamp": _s("measured dt is clamped to dt_clamp × nominal interval",
-                      "il dt misurato è limitato a dt_clamp × intervallo nominale"),
     "pd_i_max_ppm": _s("integrator limit [ppm] (0 = off, identical to baseline_pi); must exceed the steady frequency "
                        "correction (oscillator error + drift)",
                        "limite dell'integratore [ppm] (0 = off, identico a baseline_pi); deve superare la correzione di "

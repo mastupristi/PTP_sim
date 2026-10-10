@@ -122,8 +122,8 @@ columns — the command accepted by the driver `cmd_applied_ppb` (after the clam
   * **sat_ppb** [ppb]: clamp of the command (must stay below 50 000 ppm = 50 000 000 ppb); the integrator is frozen while
     saturated and the error pushes further in (anti-windup).
   * **wn_ts_max** [rad]: caps the bandwidth at `wn·dt ≤ wn_ts_max` so the sampled loop stays stable (`kp·dt < 2`).
-  * **dt_clamp** []: the interval measured from consecutive `t1` is clamped to `dt_clamp ×` the nominal Sync interval
-    (protects against lost messages).
+  * **dt_max_s** [s]: the interval measured from consecutive `t1` is clamped to this absolute value (default 10 s;
+    protects against lost messages). Keep it ≥ the nominal Sync interval.
 * `pi_per_second` — `pi_anti_windup` with the integral gain scaled by the Sync interval: `integral += (ki·dt/t_ref)·e`.
   Use it when you change the Sync interval and want the loop shape to stay the same: **kp** and **ki** are the gains
   tuned at **t_ref**, and `ki/t_ref` [s⁻²] is held constant (**kp** is not scaled: ppb/ns is already 1/s).
