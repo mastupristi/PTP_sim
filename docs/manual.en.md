@@ -118,7 +118,7 @@ columns — the command accepted by the driver `cmd_applied_ppb` (after the clam
 ### 3.2 Tab "Controller"
 
 ![Controller tab with pi_per_second](img/gui_controller_en.png)
-*Controller tab with `pi_per_second`: the gains `kp`, `ki` tuned at `t_ref_s` (1 s), the integrator limit and `dt_max_s`, the description of the selected law and the "Firmware servo" group.*
+*Controller tab with `pi_per_second`: the gains `kp`, `ki` tuned at `t_ref_s` (1 s), the integrator limit and `dt_max_s`, `kp_dt_max`, the description of the selected law and the "Firmware servo" group.*
 **Controller** — which law drives the clock rate. All of them output an **absolute** frequency correction in ppb
 (positive = faster) from the **estimated offset** only.
 
@@ -144,7 +144,10 @@ columns — the command accepted by the driver `cmd_applied_ppb` (after the clam
   * **dt_max_s** [s]: the measured interval (from consecutive `t1`, so a lost Sync gives a longer step) is clamped to
     this absolute value (default 10 s). Keep it ≥ the nominal Sync interval, or regular steps are clamped too.
     **i_max_ppm** as in `pi_anti_windup`.
-  * Not guarded: `kp·dt < 2` (as in the baseline); at Sync = 2 s the run diverges in the quiet 100 µs scenario (cause not analysed).
+  * **kp_dt_max** [dimensionless]: guard on the proportional step: the applied gain is `kp_eff = min(kp, kp_dt_max/dt)`
+    (default 1; 0 = off). With `kp·dt ≤ kp_dt_max` nothing changes (e.g. the identity with `pi_anti_windup` at 1 s holds for
+    `kp ≤ 1`); a larger `kp` is capped at long intervals. It is necessary, not sufficient: a large **ki** or Sync = 2 s can
+    still ring or diverge (see `docs/model.md`).
 * `pi_anti_windup` — the firmware PI law (same per-update **kp**, **ki**, no dt) with an integrator limit:
   `integral += ki·e; integral = clamp(integral, ±i_max); u = kp·e + integral`.
   * **i_max_ppm** [ppm]: integrator limit; **0 = off**, and the controller is then identical to `baseline_pi`.

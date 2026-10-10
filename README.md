@@ -48,7 +48,7 @@ at Sync 62.5 ms, 100 µs step: undershoot 22.9 µs against 64.6 µs.*
 |---|---|
 | `ptpsim/engine.py` | discrete-event engine: GM, network, slave firmware model, slave clock, results |
 | `ptpsim/fwport.py` | bit-faithful ports of the PI, ppb→scaled-ppm→ratio, NXP `find_correction`, ENET timer model |
-| `ptpsim/controllers.py` | controller interface, **baseline_pi** (firmware PI), **pi_time_aware** (variant), **pi_anti_windup** (firmware PI + integrator limit), **pi_per_second** (same, `ki` scaled by the Sync interval) |
+| `ptpsim/controllers.py` | controller interface, **baseline_pi** (firmware PI), **pi_time_aware** (variant), **pi_anti_windup** (firmware PI + integrator limit), **pi_per_second** (same, `ki` scaled by the Sync interval, `kp·dt` guard) |
 | `ptpsim/actuators.py`, `clock.py` | ideal / NXP actuators; piecewise-linear slave clock |
 | `ptpsim/rng.py` | disturbance streams indexed by message sequence number (reproducible seeds) |
 | `ptpsim/metrics.py`, `export.py`, `compare.py`, `analysis.py`, `cli.py` | metrics, CSV/JSON export, comparison, analytic loop model, CLI |
@@ -216,7 +216,7 @@ RMS and bias on a configurable final window, saturation/reset counters, divergen
 | PR #121108 ztest cases (ATCOR = period−1, closer neighbour, sweeps) | ported in the same file | ✔ verified |
 | Closed loop = analytic recursion | exact-delay run vs recursion, < 1e-3 ns | ✔ verified |
 | Identical clocks, offset only, frequency error, phase continuity, t2/t3 before FUP/Resp, pairing, rate change between t2 and t3, ordering, asymmetry bias, saturation/anti-windup, interval changes, 1e6 s precision, jitter distribution/seeds | `tests/test_engine.py`, `tests/test_units.py` | ✔ verified |
-| Command clamp (off = firmware, NaN not clamped, exact at the actuator limit), step threshold, `pi_anti_windup` (0 = baseline bit-identical, windup bound, residual below the steady correction), `pi_per_second` (bit-identical at `dt = t_ref`, `ki/dt` constant, damping independent of the Sync interval), P/I recording, unmodified-firmware overlay | `tests/test_servo_options.py` | ✔ verified (model only) |
+| Command clamp (off = firmware, NaN not clamped, exact at the actuator limit), step threshold, `pi_anti_windup` (0 = baseline bit-identical, windup bound, residual below the steady correction), `pi_per_second` (bit-identical at `dt = t_ref`, `ki/dt` constant, damping independent of the Sync interval, `kp·dt` guard), P/I recording, unmodified-firmware overlay | `tests/test_servo_options.py` | ✔ verified (model only) |
 | Baseline vs **hardware** | no real logs available | ✘ **not validated** |
 | Log importer / replay | needs the real instrumentation format (not in any branch) | ✘ not implemented |
 

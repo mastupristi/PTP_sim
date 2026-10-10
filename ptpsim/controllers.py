@@ -254,22 +254,43 @@ class PIPerSecond(PIAntiWindup):
     ``dt`` is the interval measured from the GM timestamps (t1 differences), so a lost Sync gives a longer
     step; it is clamped to the absolute ``dt_max_s`` (the first sample after a long gap can be arbitrarily old).
     ``dt_max_s`` must be >= the nominal Sync interval, otherwise regular steps are clamped too.
-    Not handled: the discrete loop is stable only for roughly ``kp * dt < 2``, whatever ``ki`` is
-    (``pi_time_aware`` has a guard for that; this one has none, to stay close to the firmware law).
+
+    Guard on ``kp * dt``: the proportional step per update is ``kp * dt``, and the discrete loop cannot be
+    stable beyond ``kp * dt = 2`` (no-lag model).  The gain actually applied is ``kp_eff = min(kp, kp_dt_max / dt)``
+    (``kp_dt_max = 0``: guard off).  The default 1.0 leaves ``kp * dt <= 1`` untouched (so at ``dt == t_ref_s`` it
+    is bit-identical to ``pi_anti_windup`` for ``kp <= 1``) and caps a larger ``kp`` at long intervals.  It is a
+    necessary condition only: the integral gain and the delay-estimate feedback also limit stability (see
+    docs/model.md), so it does not make every ``kp, ki, dt`` combination stable.
     """
     name = "pi_per_second"
     PARAMS = {**PIAntiWindup.PARAMS,
               "t_ref_s": (1.0, 0.01, 10.0, "interval at which kp, ki are tuned [s]; ki acts as ki*dt/t_ref_s"),
-              "dt_max_s": (10.0, 0.01, 100.0, "measured dt is clamped to this value [s] (>= nominal Sync interval)")}
+              "dt_max_s": (10.0, 0.01, 100.0, "measured dt is clamped to this value [s] (>= nominal Sync interval)"),
+              "kp_dt_max": (1.0, 0.0, 10.0, "guard: kp_eff = min(kp, kp_dt_max / dt); 0 = off")}
 
     @property
     def ki_eff(self) -> float:
         """Per-update integral gain applied at the last update."""
         return self._ki_eff
 
+    @property
+    def kp_eff(self) -> float:
+        """Proportional gain applied at the last update (``kp`` unless the ``kp * dt`` guard cut it)."""
+        return self._kp_eff
+
     def __init__(self, **params):
         super().__init__(**params)
         self._ki_eff = self.params["ki"]
+        self._kp_eff = self.params["kp"]
+        self._dt = self.params["t_ref_s"]            # interval of the last update
+
+    def _kp_for(self, dt: float) -> float:
+        kp_dt_max = self.params["kp_dt_max"]
+        return min(self.params["kp"], kp_dt_max / dt) if kp_dt_max > 0.0 else self.params["kp"]
+
+    def _proportional(self, error: float) -> float:
+        # bumpless transfer after a gain change: P with the *new* gains at the last interval
+        return self._kp_for(self._dt) * error
 
     def update(self, s: ServoSample) -> float:
         e = -float(s.offset_ns)
@@ -277,11 +298,12 @@ class PIPerSecond(PIAntiWindup):
         dt = min(dt, self.params["dt_max_s"])
         pi = self._pi
         self._ki_eff = pi.ki * dt / self.params["t_ref_s"]
+        self._dt, self._kp_eff = dt, self._kp_for(dt)
         pi.integral += self._ki_eff * e
         limit_ppb = self.params["i_max_ppm"] * 1000.0
         if limit_ppb > 0.0 and abs(pi.integral) > limit_ppb:
             pi.integral = math.copysign(limit_ppb, pi.integral)
-        out = pi.kp * e + pi.integral
+        out = self._kp_eff * e + pi.integral
         self.last_error, self.last_output = e, out
         return out
 

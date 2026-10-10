@@ -110,6 +110,9 @@ STRINGS: dict[str, dict] = {
                      "quindi ki/t_ref [s⁻²] non dipende dall'intervallo Sync (kp non viene scalato)"),
     "pd_dt_max_s": _s("measured dt is clamped to this value [s]; keep it ≥ the nominal Sync interval",
                       "il dt misurato è limitato a questo valore [s]; mantienilo ≥ all'intervallo Sync nominale"),
+    "pd_kp_dt_max": _s("guard: the applied kp is min(kp, this / dt) [dimensionless]; 0 = off. Stability needs kp·dt < 2",
+                       "protezione: il kp applicato è min(kp, questo / dt) [adimensionale]; 0 = off. La stabilità "
+                       "richiede kp·dt < 2"),
     "g_fw": _s("Firmware servo (clock.c)", "Servo del firmware (clock.c)"),
     "fw_clamp": _s("Command clamp (0 = off)", "Clamp del comando (0 = off)"),
     "fw_clamp_tip": _s("NOT in the firmware. Saturates the servo command to ± this value before the driver; 0 = firmware "
@@ -312,8 +315,10 @@ STRINGS: dict[str, dict] = {
     "cn_pi_per_second": _s(
         "Firmware PI law with kp, ki tuned at t_ref (default 1 s): the integrator adds ki·dt/t_ref per update (dt measured "
         "from the GM timestamps), so the loop shape does not change with the Sync interval. kp is not scaled. "
-        "Integrator limit i_max_ppm as in pi_anti_windup. At dt = t_ref identical to pi_anti_windup.",
+        "Integrator limit i_max_ppm as in pi_anti_windup. Guard: the applied kp is min(kp, kp_dt_max/dt). At dt = t_ref "
+        "(and kp ≤ kp_dt_max) identical to pi_anti_windup.",
         "Legge del PI firmware con kp, ki tarati a t_ref (default 1 s): l'integratore somma ki·dt/t_ref a ogni aggiornamento "
         "(dt misurato dai timestamp del GM), quindi la forma dell'anello non cambia con l'intervallo Sync. kp non viene "
-        "scalato. Limite integratore i_max_ppm come in pi_anti_windup. A dt = t_ref identico a pi_anti_windup."),
+        "scalato. Limite integratore i_max_ppm come in pi_anti_windup. Protezione: il kp applicato è min(kp, kp_dt_max/dt). "
+        "A dt = t_ref (e kp ≤ kp_dt_max) identico a pi_anti_windup."),
 }

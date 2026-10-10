@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Experimental servo options: command clamp, configurable step threshold, anti-windup PI,
 P/I terms recording and the unmodified-firmware overlay."""
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -192,6 +194,54 @@ def test_per_second_pi_scales_only_the_integral_gain_with_the_measured_interval(
     c.set_params({"dt_max_s": 2.0})
     c.update(ServoSample(offset_ns=-1000, sync_interval_s=900.0, nominal_interval_s=0.25, index=3))
     assert c.ki_eff == pytest.approx(0.3 * 2.0)
+
+
+def test_per_second_pi_caps_kp_so_that_kp_times_dt_stays_below_kp_dt_max():
+    from ptpsim.controllers import PIPerSecond, ServoSample
+
+    def kp_eff(dt, **kw):
+        c = PIPerSecond(kp=1.6, ki=0.3, **kw)
+        out = c.update(ServoSample(offset_ns=-1000, sync_interval_s=dt, nominal_interval_s=dt, index=0))
+        assert out == pytest.approx(c.kp_eff * 1000 + c.integral)       # the output uses the applied gain
+        return c.kp_eff
+
+    assert kp_eff(0.25) == pytest.approx(1.6)                             # 0.4 <= 1: untouched
+    assert kp_eff(1.0) == pytest.approx(1.0)                              # 1.6 > 1: capped
+    assert kp_eff(2.0) == pytest.approx(0.5)
+    assert kp_eff(0.625) == pytest.approx(1.6) and kp_eff(1.0, kp_dt_max=2.0) == pytest.approx(1.6)
+    assert kp_eff(2.0, kp_dt_max=0.0) == pytest.approx(1.6)               # 0 = off
+    # the guard acts on the clamped measured interval (dt_max_s), not on a huge gap
+    assert kp_eff(900.0, dt_max_s=4.0) == pytest.approx(0.25)
+    # kp <= kp_dt_max at dt == t_ref: the law is the firmware one (also covered by the bit-identity test)
+    assert PIPerSecond(kp=0.7, ki=0.3).update(
+        ServoSample(offset_ns=-1.0, sync_interval_s=1.0, nominal_interval_s=1.0, index=0)) == pytest.approx(0.7 + 0.3)
+
+
+def test_per_second_pi_bumpless_transfer_uses_the_guarded_gain():
+    from ptpsim.controllers import PIPerSecond, ServoSample
+    c = PIPerSecond(kp=0.5, ki=0.3)
+    c.update(ServoSample(offset_ns=-1000, sync_interval_s=2.0, nominal_interval_s=2.0, index=0))
+    last_out = c.last_output
+    c.set_params({"kp": 1.6}, "bumpless")                                 # guard: min(1.6, 1/2) = 0.5 at 2 s
+    assert c.integral + c._proportional(c.last_error) == pytest.approx(last_out)
+    out = c.update(ServoSample(offset_ns=-1000, sync_interval_s=2.0, nominal_interval_s=2.0, index=1))
+    assert c.kp_eff == pytest.approx(0.5) and out == pytest.approx(c.kp_eff * 1000 + c.integral)
+
+
+def test_kp_guard_helps_at_a_long_sync_interval():
+    """scenario000 at Sync 1 s, kp 1.6 / ki 0.3: unguarded the loop rings for ~1 min, with the cap it settles twice as fast."""
+    from ptpsim.config import SimConfig
+    from ptpsim.metrics import MetricsConfig, compute_metrics
+    base = SimConfig.load(Path(__file__).parent.parent / "configs" / "scenario000.json")
+
+    def settling(kp_dt_max):
+        cfg = base.with_overrides(**{"intervals.sync_log": 0, "controller.params": {
+            **base.controller.params, "kp": 1.6, "ki": 0.3, "kp_dt_max": kp_dt_max}})
+        return compute_metrics(simulate(cfg), MetricsConfig(band_ns=1000.0))["true_offset"]["settling_s"]
+
+    guarded, unguarded = settling(1.0), settling(0.0)
+    assert guarded is not None and unguarded is not None
+    assert guarded < 0.6 * unguarded
 
 
 def test_integral_gain_per_second_is_independent_of_the_sync_interval():

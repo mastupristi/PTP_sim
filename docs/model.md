@@ -99,7 +99,7 @@ residual at 24 MHz.
 | `e` | −offset [ns] | −offset [ns] | −offset [ns] |
 | parameters | `kp` [ppb/ns], `ki` [ppb/ns per update] | `wn` [rad/s], `zeta`; `kp = 2ζ·wn` [s⁻¹], `ki = wn²` [s⁻²] | as baseline + `i_max_ppm` [ppm] (0 = off) |
 | dt | none | measured from consecutive `t1` (GM timestamps), clamped to `dt_max_s` | none |
-| stability | none (Kconfig: tuned for ~1 s) | `wn·dt ≤ wn_ts_max` (0.35 rad): `kp·dt < 2` | as baseline |
+| stability | none (Kconfig: tuned for ~1 s) | `wn·dt ≤ wn_ts_max` (0.35 rad): `kp·dt < 2` | `kp_eff = min(kp, kp_dt_max/dt)` (`kp·dt ≤ 1` by default) |
 | saturation | none: driver rejects → `clock_servo_reset` | clamp ±`sat_ppb` (400 000 ppb) + anti-windup | integrator only (output limited by the servo's command clamp, if on) |
 | output | absolute ppb | absolute ppb | absolute ppb |
 
@@ -110,8 +110,27 @@ not scaled: ppb/ns is already s⁻¹. `ki/t_ref_s` [s⁻²] is thus constant and
 0.64 at 1 s, 0.32 at 250 ms, 0.16 at 62.5 ms. At `dt = t_ref_s` it is bit-identical to `pi_anti_windup`. Measured
 (quiet scenario, 100 µs step, 0 ppm, 0.7 / 0.3, minimum of the true offset after the step; `tests/test_servo_options.py`
 repeats the check): baseline −64.6 µs (62.5 ms), −55.6 (125 ms), −45.9 (250 ms), −35.0 (500 ms), −30.0 (1 s);
-`pi_per_second` −22.9, −22.3, −22.9, −21.1, −30.0 µs. It does **not** guard `kp·dt < 2` (the baseline neither): at
-Sync = 2 s both laws diverge in a 100 µs / 20 ppm scenario (cause not analysed).
+`pi_per_second` −22.9, −22.3, −22.9, −21.1, −30.0 µs. 
+
+Guard on `kp·dt`: the applied gain is `kp_eff = min(kp, kp_dt_max/dt)` (`kp_dt_max` = 1 by default, 0 = off), because
+the discrete loop cannot be stable for `kp·dt ≥ 2` and a fixed `kp` meets that at long Sync intervals. For `kp·dt ≤ 1`
+it changes nothing. Measured on `configs/noisy_seed1.json` (5 seeds, 100 µs step, +20 ppm, `pi_per_second`, Sync 1 s,
+band ±2 µs; seeds settled / median settling / median final RMS):
+
+| kp / ki | guard off | guard on (`kp_dt_max` = 1) |
+|---|---|---|
+| 0.7 / 0.3 | 5/5, 13.1 s, 221 ns | same (kp·dt = 0.7: untouched) |
+| 1.6 / 0.3 | 3/5, 273 s, 647 ns | 5/5, 12.1 s, 290 ns |
+| 1.6 / 0.6 | 1/5, 283 s, 1604 ns | 5/5, 11.3 s, 395 ns |
+| 2.5 / 0.3 | 0/5 (diverges) | 5/5, 12.1 s, 290 ns |
+| 1.6 / 1.0 | 0/5 (diverges) | 3/5, 197 s, 595 ns |
+
+So the guard removes the divergence caused by a large `kp`, but it is only necessary: with a large `ki` the loop still
+rings at 1 s (last row). At Sync = 2 s the loop rings or diverges for every `kp·dt` tried (0.5-1.6, `ki` = 0.3,
+`i_max_ppm` = 0): quiet `scenario000` settles only for `kp·dt` ≤ 0.7 (overshoot 70-90 %, 37-114 s at ±1 µs) and never
+beyond, and on the noisy seeds 4/5 settle at `kp·dt` = 0.5 and none from 0.9. In a 2 s noisy run the offset estimate alternates in sign at every update and the
+delay estimate swings by ±70 µs (true delay: 1 µs); the mechanism (delay estimated from `t2`/`t3` taken across a rate
+change) is consistent with the closed-loop model but has not been isolated, so no cause is claimed.
 
 All feed the same firmware servo state machine (lock, outlier rejection, step, reset). With `i_max_ppm = 0`
 `pi_anti_windup` is bit-identical to `baseline_pi`; `i_max` must exceed the steady frequency correction, otherwise

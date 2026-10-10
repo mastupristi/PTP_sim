@@ -118,7 +118,7 @@ ultime due colonne — il comando accettato dal driver `cmd_applied_ppb` (dopo i
 ### 3.2 Scheda "Controllore"
 
 ![Scheda Controllore con pi_per_second](img/gui_controller_it.png)
-*Scheda Controllore con `pi_per_second`: i guadagni `kp`, `ki` tarati a `t_ref_s` (1 s), il limite dell'integratore e `dt_max_s`, la descrizione della legge scelta e il gruppo "Servo del firmware".*
+*Scheda Controllore con `pi_per_second`: i guadagni `kp`, `ki` tarati a `t_ref_s` (1 s), il limite dell'integratore e `dt_max_s`, `kp_dt_max`, la descrizione della legge scelta e il gruppo "Servo del firmware".*
 
 **Controllore** — la legge che comanda il rate del clock. Tutti producono una correzione di frequenza **assoluta** in ppb
 (positivo = più veloce) usando solo l'**offset stimato**.
@@ -145,7 +145,10 @@ ultime due colonne — il comando accettato dal driver `cmd_applied_ppb` (dopo i
   * **dt_max_s** [s]: l'intervallo misurato (da `t1` consecutivi, quindi un Sync perso dà un passo più lungo) è limitato a
     questo valore assoluto (default 10 s). Mantienilo ≥ all'intervallo Sync nominale, altrimenti vengono limitati anche i
     passi regolari. **i_max_ppm** come in `pi_anti_windup`.
-  * Non protetto: `kp·dt < 2` (come nella baseline); con Sync = 2 s la simulazione diverge nello scenario quieto da 100 µs (causa non analizzata).
+  * **kp_dt_max** [adimensionale]: protezione sul passo proporzionale: il guadagno applicato è `kp_eff = min(kp, kp_dt_max/dt)`
+    (default 1; 0 = off). Con `kp·dt ≤ kp_dt_max` non cambia nulla (per esempio l'identità con `pi_anti_windup` a 1 s vale
+    per `kp ≤ 1`); un `kp` più alto viene limitato agli intervalli lunghi. È necessaria, non sufficiente: un **ki** alto o
+    Sync = 2 s possono ancora oscillare o divergere (vedi `docs/model.md`).
 * `pi_anti_windup` — la legge del PI firmware (stessi **kp**, **ki** per aggiornamento, senza dt) con un limite dell'integratore:
   `integrale += ki·e; integrale = clamp(integrale, ±i_max); u = kp·e + integrale`.
   * **i_max_ppm** [ppm]: limite dell'integratore; **0 = off**, e il controllore è allora identico a `baseline_pi`.
