@@ -123,6 +123,14 @@ ultime due colonne — il comando accettato dal driver `cmd_applied_ppb` (dopo i
   * **wn_ts_max** [rad]: limita la banda a `wn·dt ≤ wn_ts_max` perché l'anello campionato resti stabile (`kp·dt < 2`).
   * **dt_clamp** []: l'intervallo misurato da `t1` consecutivi è limitato a `dt_clamp ×` l'intervallo Sync nominale (protezione
     contro i messaggi persi).
+* `pi_per_second` — `pi_anti_windup` con il guadagno integrale scalato dall'intervallo Sync: `integrale += (ki·dt/t_ref)·e`.
+  Serve quando cambi l'intervallo Sync e vuoi che la forma dell'anello resti la stessa: **kp** e **ki** sono i guadagni
+  tarati a **t_ref**, e `ki/t_ref` [s⁻²] resta costante (**kp** non viene scalato: ppb/ns è già 1/s).
+  * **t_ref_s** [s]: intervallo a cui sono tarati kp, ki (default 1 s, l'intervallo per cui sono tarati i guadagni del firmware).
+    A `dt = t_ref_s` la legge è identica a `pi_anti_windup`; a 250 ms l'integratore somma ki/4 a ogni aggiornamento.
+  * **dt_clamp** []: l'intervallo misurato (da `t1` consecutivi, quindi un Sync perso dà un passo più lungo) è limitato a
+    `dt_clamp ×` l'intervallo nominale. **i_max_ppm** come in `pi_anti_windup`.
+  * Non protetto: `kp·dt < 2` (come nella baseline); con Sync = 2 s la simulazione diverge nello scenario quieto da 100 µs (causa non analizzata).
 * `pi_anti_windup` — la legge del PI firmware (stessi **kp**, **ki** per aggiornamento, senza dt) con un limite dell'integratore:
   `integrale += ki·e; integrale = clamp(integrale, ±i_max); u = kp·e + integrale`.
   * **i_max_ppm** [ppm]: limite dell'integratore; **0 = off**, e il controllore è allora identico a `baseline_pi`.

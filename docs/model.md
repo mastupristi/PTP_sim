@@ -103,6 +103,16 @@ residual at 24 MHz.
 | saturation | none: driver rejects → `clock_servo_reset` | clamp ±`sat_ppb` (400 000 ppb) + anti-windup | integrator only (output limited by the servo's command clamp, if on) |
 | output | absolute ppb | absolute ppb | absolute ppb |
 
+`pi_per_second` (experimental) is `pi_anti_windup` with `ki_eff = ki·dt/t_ref_s` (`dt` measured from consecutive `t1`,
+clamped to `dt_clamp × nominal`; `t_ref_s = 1 s` by default, the interval the firmware gains are tuned for). `kp` is
+not scaled: ppb/ns is already s⁻¹. `ki/t_ref_s` [s⁻²] is thus constant and the continuous damping
+`ζ = kp / (2·sqrt(ki/t_ref_s))` = 0.64 for any Sync interval, whereas in the baseline it is `0.7 / (2·sqrt(0.3/T))`:
+0.64 at 1 s, 0.32 at 250 ms, 0.16 at 62.5 ms. At `dt = t_ref_s` it is bit-identical to `pi_anti_windup`. Measured
+(quiet scenario, 100 µs step, 0 ppm, 0.7 / 0.3, minimum of the true offset after the step; `tests/test_servo_options.py`
+repeats the check): baseline −64.6 µs (62.5 ms), −55.6 (125 ms), −45.9 (250 ms), −35.0 (500 ms), −30.0 (1 s);
+`pi_per_second` −22.9, −22.3, −22.9, −21.1, −30.0 µs. It does **not** guard `kp·dt < 2` (the baseline neither): at
+Sync = 2 s both laws diverge in a 100 µs / 20 ppm scenario (cause not analysed).
+
 All feed the same firmware servo state machine (lock, outlier rejection, step, reset). With `i_max_ppm = 0`
 `pi_anti_windup` is bit-identical to `baseline_pi`; `i_max` must exceed the steady frequency correction, otherwise
 the offset settles at `(correction − i_max)/kp`.

@@ -238,7 +238,54 @@ class PIAntiWindup(BaselinePI):
         return out
 
 
-REGISTRY: dict[str, type[Controller]] = {c.name: c for c in (BaselinePI, PITimeAware, PIAntiWindup)}
+class PIPerSecond(PIAntiWindup):
+    """Firmware PI law with the integral gain scaled by the measured Sync interval.
+
+    ``ki_eff = ki * dt / t_ref_s``;  ``integral += ki_eff * e;  integral = clamp(integral, +-i_max);
+    ppb = kp * e + integral``  (``e = -offset_ns``, absolute output in ppb, same sign and clamp as the firmware).
+
+    Why: the firmware ``ki`` acts per update, so the continuous-time integral gain is ``ki / T_sync`` and the
+    damping changes with the Sync interval (0.64 at 1 s, 0.32 at 0.25 s for 0.7 / 0.3).  Here ``kp`` and
+    ``ki`` are the gains *tuned at* ``t_ref_s``: ``ki / t_ref_s`` [s^-2] is held constant, so the integrator
+    adds ``ki * dt / t_ref_s`` per update and the loop shape no longer depends on the interval.
+    ``kp`` is **not** scaled: ppb/ns is already 1/s, a continuous gain.  Default ``t_ref_s = 1`` (the interval the
+    firmware gains are tuned for, Kconfig help); at ``dt == t_ref_s`` the law is bit-identical to ``pi_anti_windup``.
+
+    ``dt`` is the interval measured from the GM timestamps (t1 differences), so a lost Sync gives a longer
+    step; it is clamped to ``dt_clamp * nominal`` (the first sample after a gap/reset can be arbitrarily old).
+    Not handled: the discrete loop is stable only for roughly ``kp * dt < 2``, whatever ``ki`` is
+    (``pi_time_aware`` has a guard for that; this one has none, to stay close to the firmware law).
+    """
+    name = "pi_per_second"
+    PARAMS = {**PIAntiWindup.PARAMS,
+              "t_ref_s": (1.0, 0.01, 10.0, "interval at which kp, ki are tuned [s]; ki acts as ki*dt/t_ref_s"),
+              "dt_clamp": (4.0, 1.0, 100.0, "measured dt is clamped to dt_clamp * nominal interval")}
+
+    @property
+    def ki_eff(self) -> float:
+        """Per-update integral gain applied at the last update."""
+        return self._ki_eff
+
+    def __init__(self, **params):
+        super().__init__(**params)
+        self._ki_eff = self.params["ki"]
+
+    def update(self, s: ServoSample) -> float:
+        e = -float(s.offset_ns)
+        dt = s.sync_interval_s if s.sync_interval_s > 0 else s.nominal_interval_s
+        dt = min(dt, self.params["dt_clamp"] * s.nominal_interval_s)
+        pi = self._pi
+        self._ki_eff = pi.ki * dt / self.params["t_ref_s"]
+        pi.integral += self._ki_eff * e
+        limit_ppb = self.params["i_max_ppm"] * 1000.0
+        if limit_ppb > 0.0 and abs(pi.integral) > limit_ppb:
+            pi.integral = math.copysign(limit_ppb, pi.integral)
+        out = pi.kp * e + pi.integral
+        self.last_error, self.last_output = e, out
+        return out
+
+
+REGISTRY: dict[str, type[Controller]] = {c.name: c for c in (BaselinePI, PITimeAware, PIAntiWindup, PIPerSecond)}
 
 
 def make_controller(name: str, params: dict[str, float] | None = None) -> Controller:

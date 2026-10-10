@@ -133,6 +133,9 @@ def test_anti_windup_controller_is_selectable(win):
     c = win.build_config()
     assert c.controller.name == "pi_anti_windup"
     assert c.controller.params == {"kp": 0.7, "ki": 0.3, "i_max_ppm": 0.0}
+    win.ctrl_combo.setCurrentText("pi_per_second")
+    assert win.build_config().controller.params == {"kp": 0.7, "ki": 0.3, "i_max_ppm": 0.0, "t_ref_s": 1.0,
+                                                    "dt_clamp": 4.0}
     win.ctrl_combo.setCurrentText("baseline_pi")
 
 

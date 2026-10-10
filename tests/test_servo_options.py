@@ -161,3 +161,57 @@ def test_live_overlay_does_not_receive_firmware_or_controller_changes():
     assert base.firmware.cmd_clamp_ppm == 0.0 and base.network.delay_ms_ns == 2000.0
     assert live.sims["main"].cfg.firmware.cmd_clamp_ppm == 10.0
     assert live.delta()["main"]["limits"]["clamp"] == 10.0
+
+
+# --------------------------------------------------------------------------- per-second PI
+
+def _ps(cfg, **params):
+    return cfg.with_overrides(**{"controller.name": "pi_per_second",
+                                 "controller.params": {"kp": 0.7, "ki": 0.3, **params}})
+
+
+def test_per_second_pi_is_bit_identical_to_anti_windup_at_the_reference_interval():
+    cfg = quiet_cfg(**{"intervals.sync_log": 0, "oscillator.initial_offset_ns": 100e3,
+                       "oscillator.freq_error_ppb": 20_000.0, "duration_s": 60.0})
+    a, b = simulate(_ps(cfg, t_ref_s=1.0)), simulate(_aw(cfg, 0.0))
+    for name in ("servo_cmd_ppb", "servo_integral", "servo_p_ppb", "servo_offset_true_ns"):
+        assert np.array_equal(getattr(a, name), getattr(b, name), equal_nan=True), name
+
+
+def test_per_second_pi_scales_only_the_integral_gain_with_the_measured_interval():
+    from ptpsim.controllers import PIPerSecond, ServoSample
+    c = PIPerSecond(kp=0.7, ki=0.3, t_ref_s=1.0)
+    out = c.update(ServoSample(offset_ns=-1000, sync_interval_s=0.25, nominal_interval_s=0.25, index=0))
+    assert c.ki_eff == pytest.approx(0.075)
+    assert c.integral == pytest.approx(0.075 * 1000) and out == pytest.approx(0.7 * 1000 + 75.0)
+    # a lost Sync (measured 0.5 s) doubles the step; a huge gap is clamped to dt_clamp * nominal
+    c.update(ServoSample(offset_ns=-1000, sync_interval_s=0.5, nominal_interval_s=0.25, index=1))
+    assert c.ki_eff == pytest.approx(0.15)
+    c.update(ServoSample(offset_ns=-1000, sync_interval_s=900.0, nominal_interval_s=0.25, index=2))
+    assert c.ki_eff == pytest.approx(0.3 * 4 * 0.25)
+
+
+def test_integral_gain_per_second_is_independent_of_the_sync_interval():
+    from ptpsim.controllers import PIPerSecond, ServoSample
+    for n in (-4, -2, 0, 1):
+        T = 2.0 ** n
+        c = PIPerSecond(kp=0.7, ki=0.3, t_ref_s=1.0, dt_clamp=100.0)
+        c.update(ServoSample(offset_ns=-1.0, sync_interval_s=T, nominal_interval_s=T, index=0))
+        assert c.ki_eff / T == pytest.approx(0.3)
+
+
+def test_per_second_pi_keeps_the_damping_across_sync_intervals_where_the_baseline_does_not():
+    """100 us step, no frequency error: the undershoot of the baseline grows as the interval shrinks
+    (continuous zeta 0.64 -> 0.16 from 1 s to 62.5 ms), the per-second PI does not."""
+    from ptpsim.metrics import true_offset_grid
+
+    def undershoot(name, n):
+        cfg = quiet_cfg(**{"duration_s": 120.0, "intervals.sync_log": n, "oscillator.initial_offset_ns": 100e3,
+                           "controller.name": name, "controller.params": {"kp": 0.7, "ki": 0.3}})
+        return -float(np.min(true_offset_grid(simulate(cfg), 0.01)[1]))
+
+    base = {n: undershoot("baseline_pi", n) for n in (-4, -2, 0)}
+    flat = {n: undershoot("pi_per_second", n) for n in (-4, -2, 0)}
+    assert base[-4] > 1.8 * base[0]                                 # baseline: >= 1.8x worse at 62.5 ms than at 1 s
+    assert max(flat.values()) < 1.5 * min(flat.values())             # per-second: within 1.5x across 16x of interval
+    assert flat[-4] < 0.5 * base[-4]

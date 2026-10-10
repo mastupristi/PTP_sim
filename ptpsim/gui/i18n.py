@@ -88,6 +88,10 @@ STRINGS: dict[str, dict] = {
                        "correction (oscillator error + drift)",
                        "limite dell'integratore [ppm] (0 = off, identico a baseline_pi); deve superare la correzione di "
                        "frequenza a regime (errore oscillatore + deriva)"),
+    "pd_t_ref_s": _s("interval [s] at which kp, ki are tuned; the integrator adds ki·dt/t_ref per update, so ki/t_ref [s⁻²] "
+                     "does not depend on the Sync interval (kp is not scaled)",
+                     "intervallo [s] a cui sono tarati kp, ki; l'integratore somma ki·dt/t_ref a ogni aggiornamento, "
+                     "quindi ki/t_ref [s⁻²] non dipende dall'intervallo Sync (kp non viene scalato)"),
     "g_fw": _s("Firmware servo (clock.c)", "Servo del firmware (clock.c)"),
     "fw_clamp": _s("Command clamp (0 = off)", "Clamp del comando (0 = off)"),
     "fw_clamp_tip": _s("NOT in the firmware. Saturates the servo command to ± this value before the driver; 0 = firmware "
@@ -272,4 +276,11 @@ STRINGS: dict[str, dict] = {
         "bounds the windup while the command clamp saturates. i_max_ppm = 0: identical to baseline_pi.",
         "Legge del PI firmware (stessi kp, ki per aggiornamento, senza dt) con l'integratore limitato a ±i_max_ppm dopo "
         "ogni aggiornamento: limita il windup mentre il clamp del comando satura. i_max_ppm = 0: identico a baseline_pi."),
+    "cn_pi_per_second": _s(
+        "Firmware PI law with kp, ki tuned at t_ref (default 1 s): the integrator adds ki·dt/t_ref per update (dt measured "
+        "from the GM timestamps), so the loop shape does not change with the Sync interval. kp is not scaled. "
+        "Integrator limit i_max_ppm as in pi_anti_windup. At dt = t_ref identical to pi_anti_windup.",
+        "Legge del PI firmware con kp, ki tarati a t_ref (default 1 s): l'integratore somma ki·dt/t_ref a ogni aggiornamento "
+        "(dt misurato dai timestamp del GM), quindi la forma dell'anello non cambia con l'intervallo Sync. kp non viene "
+        "scalato. Limite integratore i_max_ppm come in pi_anti_windup. A dt = t_ref identico a pi_anti_windup."),
 }
