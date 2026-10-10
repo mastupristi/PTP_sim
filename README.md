@@ -34,6 +34,8 @@ python bench/benchmark.py             # engine benchmark   (bench/gui_latency.py
 Python ≥ 3.10 (developed on 3.14). Dependencies: `numpy` (engine); `PySide6`, `pyqtgraph` (GUI); `matplotlib`
 only for `scripts/make_figures.py` (`pip install '.[docs]'`).
 Headless GUI check: `QT_QPA_PLATFORM=offscreen python bench/gui_latency.py`.
+Headless GUI screenshots (the real window and worker, driven from code, no display needed):
+`python scripts/gui_screenshots.py --out shots --controller pi_per_second --sync -4 -2 0 --overlay`.
 
 ## Repository layout
 
