@@ -59,7 +59,7 @@ their range when zooming, but dragging (pan) is never restricted. With y uncheck
 in the zoomed x range, as in "Fit view"; zooming on y with a checked plot switches that plot's y auto-range off until "Fit view".
 
 ![Zoom row: x zoomed, y of the delay plot unchecked](img/gui_zoom_en.png)
-*The same run after one wheel notch on the offset plot with **y delay** unchecked: the time axis is zoomed in both plots (about 3–18 s) and the delay plot keeps its own y range (it only rescales to the visible data).*
+*The same run after four wheel notches over the offset plot (**y offset** checked) and one over the delay plot (**y delay** unchecked): the time axis is zoomed in both plots (≈ 1–20 s); only the offset plot's y is zoomed (−30 to 20 µs), the delay plot's y is not — it merely rescales to the data visible in the zoomed time range.*
 
 * *Delay plot*: the firmware's delay estimate (green) is **held** until the next Delay_Resp is processed, with a dot at
   every sample (so the real sampling rate is visible); the dashed black line is the physical delay of the network.

@@ -59,7 +59,7 @@ compaiono quando sono visibili). Gli assi non selezionati mantengono il loro int
 come con "Adatta vista"; lo zoom su y di un grafico selezionato spegne l'auto-range di quell'asse finché non premi "Adatta vista".
 
 ![Riga Zoom: x ingrandito, y del grafico delay deselezionato](img/gui_zoom_it.png)
-*La stessa simulazione dopo uno scatto di rotella sul grafico dell'offset con **y delay** deselezionato: l'asse del tempo è ingrandito in entrambi i grafici (circa 3–18 s) e il grafico del delay mantiene il proprio intervallo y (si riscala solo sui dati visibili).*
+*La stessa simulazione dopo quattro scatti di rotella sul grafico dell'offset (**y offset** selezionato) e uno su quello del delay (**y delay** deselezionato): l'asse del tempo è ingrandito in entrambi i grafici (≈ 1–20 s); solo la y dell'offset è ingrandita (da −30 a 20 µs), quella del delay no: si riscala soltanto sui dati visibili nell'intervallo di tempo ingrandito.*
 
 * *Grafico Delay*: la stima del delay del firmware (verde) è **tenuta** fino all'elaborazione della Delay_Resp successiva, con un
   punto a ogni campione (così si vede la frequenza reale dei campioni); la linea nera tratteggiata è il delay fisico della rete.

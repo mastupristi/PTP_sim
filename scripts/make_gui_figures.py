@@ -43,7 +43,7 @@ SCENES = {
                             "controller.name": "pi_anti_windup",
                             "controller.params": {"kp": 0.7, "ki": 0.3, "i_max_ppm": 100.0}}, pi_terms=True, units="ms",
                        size=(1500, 1050)),
-    # Zoom row: x zoomed on the transient in all plots, y of the delay plot left alone
+    # Zoom row: x is shared by all plots, y is zoomed only in the plot under the cursor (and only if its box is checked)
     "zoom": dict(cfg={"duration_s": 90.0, "intervals.sync_log": -4, "oscillator.initial_offset_ns": 100e3,
                       "oscillator.freq_error_ppb": 0.0, "controller.name": "pi_per_second",
                       "controller.params": {"kp": 0.7, "ki": 0.3}}, overlay=True, zoom=True),
@@ -121,16 +121,22 @@ def main(argv=None) -> int:
 
 
 def _zoom_scene(w, spin):
-    """Wheel-zoom the time axis (all plots) at the transient, y of the delay plot excluded from the zoom."""
+    """x is shared, y is per plot: four wheel notches over the offset plot (y offset checked) near the undershoot,
+    then one over the delay plot with y delay unchecked.  The delay plot's y is then only autoscaled to the visible data."""
     from PySide6 import QtCore, QtGui, QtWidgets
     w.chk_zoom_y["delay"].setChecked(False)
-    w.p_delay.setXRange(2.0, 22.0, padding=0)          # a deterministic x window instead of a wheel position
-    spin(300)
-    vp = w.pw_off.viewport()
-    pos = QtCore.QPointF(vp.width() * 0.3, vp.height() / 2)
-    ev = QtGui.QWheelEvent(pos, vp.mapToGlobal(pos), QtCore.QPoint(0, 0), QtCore.QPoint(0, 120), QtCore.Qt.NoButton,
-                           QtCore.Qt.NoModifier, QtCore.Qt.NoScrollPhase, False)
-    QtWidgets.QApplication.sendEvent(vp, ev)           # one wheel notch: x zoomed, y of the offset plot too
+
+    def notch(pw, fx, fy):
+        vp = pw.viewport()
+        pos = QtCore.QPointF(vp.width() * fx, vp.height() * fy)
+        ev = QtGui.QWheelEvent(pos, vp.mapToGlobal(pos), QtCore.QPoint(0, 0), QtCore.QPoint(0, 120),
+                               QtCore.Qt.NoButton, QtCore.Qt.NoModifier, QtCore.Qt.NoScrollPhase, False)
+        QtWidgets.QApplication.sendEvent(vp, ev)
+        spin(100)
+
+    for _ in range(4):
+        notch(w.pw_off, 0.10, 0.62)
+    notch(w.pw_delay, 0.10, 0.5)
 
 
 def _live_scene(w, spin, until):

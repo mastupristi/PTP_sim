@@ -229,3 +229,22 @@ def test_zoom_checkboxes_follow_the_visibility_of_the_optional_plots(win):
     win.chk_pi.setChecked(False)
     assert win.chk_zoom_y["diag"].isHidden() and win.chk_zoom_y["pi"].isHidden()
     win.hide()
+
+
+def test_baseline_columns_are_sized_to_their_contents_when_the_overlay_appears(win):
+    """The overlay columns are hidden without overlay; a hidden column was not sized, so its text was cut."""
+    from ptpsim.engine import simulate
+    from ptpsim.metrics import compute_metrics
+    win.show()
+    cfg = SimConfig.load(CONFIGS[0]).with_overrides(duration_s=60.0, **{"oscillator.initial_offset_ns": 100e3})
+    win.metrics = compute_metrics(simulate(cfg))
+    win.base_metrics = None
+    win._fill_table()
+    assert win.table.isColumnHidden(3) and win.table.isColumnHidden(4)
+    win.base_metrics = compute_metrics(simulate(cfg))
+    win._fill_table()
+    for j in (3, 4):
+        assert not win.table.isColumnHidden(j)
+        assert win.table.columnWidth(j) >= win.table.sizeHintForColumn(j)
+    win.metrics = win.base_metrics = None
+    win.hide()
