@@ -52,14 +52,14 @@ Il controllore non vede mai i valori reali.
 mantenendo la configurazione (una sessione live in corso viene riavviata). La scelta viene ricordata.
 
 **Grafici.** Rotella = zoom, trascinamento = pan, tasto destro = menu pyqtgraph, "A" nell'angolo = auto-range.
-La riga **Zoom** sopra i grafici sceglie su quali assi agisce lo zoom (rotella, trascinamento col tasto destro): **x** è un
-unico interruttore per tutti i grafici (condividono l'asse del tempo), **y** ha un interruttore per grafico (i grafici rate e PI
-compaiono quando sono visibili). Gli assi non selezionati mantengono il loro intervallo durante lo zoom, ma il trascinamento
+Lo zoom (rotella, trascinamento col tasto destro) agisce sugli assi che scegli: **x** è un unico interruttore per tutti i
+grafici (la riga **Zoom** sopra i grafici; condividono l'asse del tempo), **y** ha un checkbox **zoom y** per grafico, in
+alto a destra accanto al grafico stesso (i grafici rate e PI ce l'hanno quando sono visibili). Gli assi non selezionati mantengono il loro intervallo durante lo zoom, ma il trascinamento
 (pan) non è mai limitato. Con y non selezionato il grafico si riscala comunque sui dati visibili nell'intervallo x ingrandito,
 come con "Adatta vista"; lo zoom su y di un grafico selezionato spegne l'auto-range di quell'asse finché non premi "Adatta vista".
 
-![Riga Zoom: x ingrandito, y del grafico delay deselezionato](img/gui_zoom_it.png)
-*La stessa simulazione dopo quattro scatti di rotella sul grafico dell'offset (**y offset** selezionato) e uno su quello del delay (**y delay** deselezionato): l'asse del tempo è ingrandito in entrambi i grafici (≈ 1–20 s); solo la y dell'offset è ingrandita (da −30 a 20 µs), quella del delay no: si riscala soltanto sui dati visibili nell'intervallo di tempo ingrandito.*
+![Checkbox zoom: x ingrandito, y del grafico delay deselezionato](img/gui_zoom_it.png)
+*La stessa simulazione dopo quattro scatti di rotella sul grafico dell'offset (il suo **zoom y** selezionato) e uno su quello del delay (il suo **zoom y** deselezionato): l'asse del tempo è ingrandito in entrambi i grafici (≈ 1–20 s); solo la y dell'offset è ingrandita (da −30 a 20 µs), quella del delay no: si riscala soltanto sui dati visibili nell'intervallo di tempo ingrandito.*
 
 * *Grafico Delay*: la stima del delay del firmware (verde) è **tenuta** fino all'elaborazione della Delay_Resp successiva, con un
   punto a ogni campione (così si vede la frequenza reale dei campioni); la linea nera tratteggiata è il delay fisico della rete.

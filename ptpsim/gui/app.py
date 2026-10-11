@@ -476,11 +476,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.p_off.setLabel("bottom", T("ax_time"))
         self.p_diag.setLabel("bottom", T("ax_time"))
         self.p_diag.setLabel("left", "ppb")
-        self.pw_diag.setVisible(False)
         self.p_pi.setTitle(T("pl_pi"))
         self.p_pi.setLabel("bottom", T("ax_time"))
         self.p_pi.setLabel("left", T("ax_pi"))
-        self.pw_pi.setVisible(False)
         pen = lambda col, w=1.5, st=None: pg.mkPen(col, width=w, style=st or QtCore.Qt.SolidLine)
         self.cv = {
             "delay_step": self.p_delay.plot(pen=pen(C_DELAY, 1.5), name=T("lg_delay_step")),
@@ -507,8 +505,27 @@ class MainWindow(QtWidgets.QMainWindow):
             self.cv[k].setDownsampling(auto=True, method="peak")
             self.cv[k].setClipToView(True)
         plots = QtWidgets.QSplitter(QtCore.Qt.Vertical)
-        for w in (self.pw_delay, self.pw_off, self.pw_diag, self.pw_pi):
-            plots.addWidget(w)
+        # each plot sits in a box with its own "zoom y" checkbox in a strip on its right (the strips have the same
+        # width, so the plot areas stay aligned); diag / PI hide their whole box
+        self.chk_zoom_y, self.plot_boxes = {}, {}
+        for key, pw in (("delay", self.pw_delay), ("off", self.pw_off), ("diag", self.pw_diag), ("pi", self.pw_pi)):
+            box = QtWidgets.QWidget()
+            hl = QtWidgets.QHBoxLayout(box)
+            hl.setContentsMargins(0, 0, 0, 0)
+            hl.setSpacing(0)
+            hl.addWidget(pw, 1)
+            strip = QtWidgets.QVBoxLayout()
+            strip.setContentsMargins(4, 4, 4, 0)
+            c = QtWidgets.QCheckBox(T("zoom_y_box"))
+            c.setToolTip(T("zoom_y_tip"))
+            c.setChecked(True)
+            c.toggled.connect(self._on_zoom_changed)
+            strip.addWidget(c)
+            strip.addStretch(1)
+            hl.addLayout(strip)
+            box.setVisible(key in ("delay", "off"))
+            plots.addWidget(box)
+            self.chk_zoom_y[key], self.plot_boxes[key] = c, box
         plots.setSizes([300, 420, 180, 240])
         plots.setChildrenCollapsible(False)
         self.plots_split = plots
@@ -784,8 +801,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._live_reset()
 
     def _build_zoom_row(self) -> QtWidgets.QHBoxLayout:
-        """Which axes the wheel / right-drag zoom acts on: x is shared by all plots (they are x-linked),
-        y is chosen per plot.  The pan (left drag) is not restricted."""
+        """Which axes the wheel / right-drag zoom acts on: x is shared by all plots (they are x-linked, one checkbox
+        here); y is chosen per plot, with the checkbox next to the plot.  The pan (left drag) is not restricted."""
         row = QtWidgets.QHBoxLayout()
         row.addWidget(QtWidgets.QLabel(T("zoom_lbl")))
         self.chk_zoom_x = QtWidgets.QCheckBox(T("zoom_x"))
@@ -793,15 +810,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.chk_zoom_x.setChecked(True)
         self.chk_zoom_x.toggled.connect(self._on_zoom_changed)
         row.addWidget(self.chk_zoom_x)
-        self.chk_zoom_y = {}
-        for key, pw in (("delay", self.pw_delay), ("off", self.pw_off), ("diag", self.pw_diag), ("pi", self.pw_pi)):
-            c = QtWidgets.QCheckBox(T("zoom_y_" + key))
-            c.setToolTip(T("zoom_y_tip"))
-            c.setChecked(True)
-            c.setVisible(key in ("delay", "off"))        # diag / PI follow their plot's visibility
-            c.toggled.connect(self._on_zoom_changed)
-            row.addWidget(c)
-            self.chk_zoom_y[key] = c
         row.addStretch(1)
         self._on_zoom_changed()
         return row
@@ -812,15 +820,13 @@ class MainWindow(QtWidgets.QMainWindow):
             pw.getViewBox().zoom_enabled = [zx, self.chk_zoom_y[key].isChecked()]
 
     def _on_diag_toggled(self, on):
-        self.chk_zoom_y["diag"].setVisible(on)
-        self.pw_diag.setVisible(on)
+        self.plot_boxes["diag"].setVisible(on)
         if on:
             self._share_plot_height()
         self._redraw()
 
     def _on_pi_toggled(self, on):
-        self.chk_zoom_y["pi"].setVisible(on)
-        self.pw_pi.setVisible(on)
+        self.plot_boxes["pi"].setVisible(on)
         if on:
             self._share_plot_height()
         self._redraw()

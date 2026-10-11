@@ -53,13 +53,14 @@ The controller never sees the true values.
 the current configuration (a running live session is restarted). The choice is remembered.
 
 **Plots.** Mouse wheel = zoom, drag = pan, right-click = pyqtgraph menu, double-click on the corner "A" = auto-range.
-The **Zoom** row above the plots chooses which axes the zoom (wheel, right-button drag) acts on: **x** is one switch for all
-plots (they share the time axis), **y** has one switch per plot (the rate and PI plots appear when shown). Unchecked axes keep
+The zoom (wheel, right-button drag) acts on the axes you choose: **x** is one switch for all plots (the **Zoom** row above
+the plots; they share the time axis), **y** has one **zoom y** checkbox per plot, at the top right next to the plot itself
+(the rate and PI plots have theirs when shown). Unchecked axes keep
 their range when zooming, but dragging (pan) is never restricted. With y unchecked the plot still rescales to the data visible
 in the zoomed x range, as in "Fit view"; zooming on y with a checked plot switches that plot's y auto-range off until "Fit view".
 
-![Zoom row: x zoomed, y of the delay plot unchecked](img/gui_zoom_en.png)
-*The same run after four wheel notches over the offset plot (**y offset** checked) and one over the delay plot (**y delay** unchecked): the time axis is zoomed in both plots (≈ 1–20 s); only the offset plot's y is zoomed (−30 to 20 µs), the delay plot's y is not — it merely rescales to the data visible in the zoomed time range.*
+![Zoom checkboxes: x zoomed, y of the delay plot unchecked](img/gui_zoom_en.png)
+*The same run after four wheel notches over the offset plot (its **zoom y** checked) and one over the delay plot (its **zoom y** unchecked): the time axis is zoomed in both plots (≈ 1–20 s); only the offset plot's y is zoomed (−30 to 20 µs), the delay plot's y is not — it merely rescales to the data visible in the zoomed time range.*
 
 * *Delay plot*: the firmware's delay estimate (green) is **held** until the next Delay_Resp is processed, with a dot at
   every sample (so the real sampling rate is visible); the dashed black line is the physical delay of the network.

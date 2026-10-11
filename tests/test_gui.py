@@ -221,16 +221,16 @@ def test_zoom_axes_can_be_chosen_x_shared_y_per_plot(win):
 
 def test_zoom_checkboxes_follow_the_visibility_of_the_optional_plots(win):
     win.show()
-    assert win.chk_zoom_y["diag"].isHidden() and win.chk_zoom_y["pi"].isHidden()
+    assert win.plot_boxes["diag"].isHidden() and win.plot_boxes["pi"].isHidden()
     win.chk_diag.setChecked(True)
     win.chk_pi.setChecked(True)
-    assert not win.chk_zoom_y["diag"].isHidden() and not win.chk_zoom_y["pi"].isHidden()
+    assert not win.plot_boxes["diag"].isHidden() and not win.plot_boxes["pi"].isHidden()
     win.chk_zoom_y["pi"].setChecked(False)
     assert win.pw_pi.getViewBox().zoom_enabled == [True, False]
     win.chk_zoom_y["pi"].setChecked(True)
     win.chk_diag.setChecked(False)
     win.chk_pi.setChecked(False)
-    assert win.chk_zoom_y["diag"].isHidden() and win.chk_zoom_y["pi"].isHidden()
+    assert win.plot_boxes["diag"].isHidden() and win.plot_boxes["pi"].isHidden()
     win.hide()
 
 

@@ -215,10 +215,7 @@ STRINGS: dict[str, dict] = {
     "zoom_x_tip": _s("Time axis: shared by all plots. Left-drag pans both axes whatever is checked.",
                      "Asse del tempo: condiviso da tutti i grafici. Il trascinamento sinistro sposta entrambi gli assi "
                      "qualunque sia la selezione."),
-    "zoom_y_delay": _s("y delay", "y delay"),
-    "zoom_y_off": _s("y offset", "y offset"),
-    "zoom_y_diag": _s("y rate", "y rate"),
-    "zoom_y_pi": _s("y PI", "y PI"),
+    "zoom_y_box": _s("zoom y", "zoom y"),
     "zoom_y_tip": _s("Zoom the y axis of this plot only", "Zoom dell'asse y di questo solo grafico"),
     "btn_fit": _s("Fit view", "Adatta vista"),
     "lang": _s("Language:", "Lingua:"),
