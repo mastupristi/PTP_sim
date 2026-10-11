@@ -162,7 +162,7 @@ Controls are grouped in **tabs** (Run, Controller, PTP intervals, Scenario, Netw
 the toolbar, plots sharing the time axis (**Delay**: firmware estimate held between samples with sample markers and the
 physical reference; **Offset**: estimated, true, optional overlay of the **unmodified firmware**; optional **rate
 diagnostics**; optional **PI terms**), which take all the available height, and the metrics table, always fully visible.
-Units ns/µs/ms, zoom/pan, legends.
+Units ns/µs/ms, zoom/pan, legends; the plots can be detached into their own window (closing it re-embeds them).
 
 * **PI terms** plot (ppm): P = kp·e, the integrator I and the controller output at every servo update, the command applied
   to the clock (held), and lines at the active limits (actuator, command clamp, integrator limit, controller limit) — to

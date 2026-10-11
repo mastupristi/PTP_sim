@@ -78,6 +78,29 @@ class ResultReader(QtCore.QThread):
         self._stop = True
 
 
+class PlotWindow(QtWidgets.QWidget):
+    """Top-level window that holds the plot panel while it is detached.  Closing it (X) does not destroy anything:
+    ``on_close`` re-embeds the plots in the main window (``force_close`` is for the application exit)."""
+
+    def __init__(self, on_close):
+        super().__init__(None, QtCore.Qt.Window)
+        self._on_close = on_close
+        self._force = False
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(4, 4, 4, 4)
+
+    def force_close(self):
+        self._force = True
+        self.close()
+
+    def closeEvent(self, ev):
+        if self._force:
+            ev.accept()
+            return
+        ev.ignore()
+        self._on_close()
+
+
 class MainWindow(QtWidgets.QMainWindow):
     DEBOUNCE_MS = 40
     LIVE_TICK_MS = 40
@@ -114,6 +137,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.evt_lines: list = []
         self.trans_lines: list = []
         self.lim_lines: list = []            # horizontal limit lines of the PI-terms plot
+        self.plot_window: PlotWindow | None = None
+        self._detached = False
 
         if start_worker:
             self._start_worker()
@@ -148,6 +173,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def closeEvent(self, ev):
         try:
+            if self.plot_window is not None:
+                self.plot_window.force_close()
             self.live_timer.stop()
             self.latest.value = -1
             if self.proc is not None:
@@ -403,6 +430,16 @@ class MainWindow(QtWidgets.QMainWindow):
         right = QtWidgets.QWidget()
         rl = QtWidgets.QVBoxLayout(right)
         rl.setContentsMargins(4, 4, 4, 4)
+        self.right_layout = rl
+        self._detached = False
+        # the plot panel (toolbar, "what to show" row, zoom row, plots) is one widget that can be detached into its
+        # own window; status and language stay in the main window (in the plot toolbar while attached, as before,
+        # in ``top_row`` while the panel is detached)
+        self.top_row = QtWidgets.QHBoxLayout()
+        rl.addLayout(self.top_row)
+        self.plot_panel = QtWidgets.QWidget()
+        pl = QtWidgets.QVBoxLayout(self.plot_panel)
+        pl.setContentsMargins(0, 0, 0, 0)
         # two toolbar rows: in one row the toolbar alone needed ~1450 px and forced the window beyond a
         # 1920 px screen; row 1 = units, view, status, language; row 2 = what the plots show
         tb = QtWidgets.QHBoxLayout()
@@ -443,16 +480,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.status.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Preferred)
         self.status.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         tb.addWidget(self.status, 1)
-        tb.addWidget(QtWidgets.QLabel(T("lang")))
+        self.lang_lbl = QtWidgets.QLabel(T("lang"))
+        tb.addWidget(self.lang_lbl)
         self.lang_combo = QtWidgets.QComboBox()
         for code, name in LANGS.items():
             self.lang_combo.addItem(name, code)
         self.lang_combo.setCurrentIndex(self.lang_combo.findData(get_lang()))
         self.lang_combo.currentIndexChanged.connect(self._on_lang_changed)
         tb.addWidget(self.lang_combo)
-        rl.addLayout(tb)
+        self.btn_detach = QtWidgets.QPushButton(T("btn_detach"))
+        self.btn_detach.setToolTip(T("btn_detach_tip"))
+        self.btn_detach.clicked.connect(self._toggle_detach)
+        tb.addWidget(self.btn_detach)
+        self.plot_tb = tb
+        pl.addLayout(tb)
         tb_show.addStretch(1)
-        rl.addLayout(tb_show)
+        pl.addLayout(tb_show)
 
         pg.setConfigOptions(antialias=False, background="w", foreground="k")
         self.pw_delay, self.pw_off, self.pw_diag, self.pw_pi = (pg.PlotWidget(viewBox=ZoomViewBox()) for _ in range(4))
@@ -538,13 +581,85 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.table.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         self._set_table_header()
-        rl.addLayout(self._build_zoom_row())
-        rl.addWidget(plots, 1)                              # plots take all the height the table does not need
+        pl.addLayout(self._build_zoom_row())
+        pl.addWidget(plots, 1)                              # plots take all the height the table does not need
+        rl.addWidget(self.plot_panel, 1)
+        self.detached_box = QtWidgets.QWidget()             # shown instead of the plots while they are detached
+        dl = QtWidgets.QVBoxLayout(self.detached_box)
+        dl.addStretch(1)
+        note = QtWidgets.QLabel(T("plots_detached"))
+        note.setAlignment(QtCore.Qt.AlignCenter)
+        note.setStyleSheet("color: gray")
+        dl.addWidget(note)
+        self.btn_reattach = QtWidgets.QPushButton(T("btn_attach"))
+        self.btn_reattach.clicked.connect(self.attach_plots)
+        dl.addWidget(self.btn_reattach, 0, QtCore.Qt.AlignCenter)
+        dl.addStretch(1)
+        self.detached_box.setVisible(False)
+        rl.addWidget(self.detached_box, 1)
         rl.addWidget(self.table, 0)
         split.addWidget(right)
         split.setStretchFactor(1, 1)
         self._update_interval_labels()
         self._update_enabled()
+
+    # ------------------------------------------------------------------ detachable plots
+    _TB_VAR = 5          # plot toolbar: [units, units box, view, view box, fit] then status + language, then the button
+
+    def _toggle_detach(self):
+        if self._detached:
+            self.attach_plots()
+        else:
+            self.detach_plots()
+
+    def detach_plots(self):
+        """Move the plot panel (with all its controls) into its own window; the main window keeps the status, the
+        language, the metrics table and a button to bring the plots back."""
+        if self._detached:
+            return
+        if self.plot_window is None:
+            self.plot_window = PlotWindow(self.attach_plots)
+            geo = self.screen().availableGeometry()
+            self.plot_window.resize(int(geo.width() * 0.85), int(geo.height() * 0.85))
+        win = self.plot_window
+        win.setWindowTitle(T("title_plots"))
+        for w in (self.status, self.lang_lbl, self.lang_combo):
+            self.plot_tb.removeWidget(w)
+        self.plot_tb.insertStretch(self._TB_VAR, 1)
+        self.top_row.addWidget(self.status, 1)
+        self.top_row.addWidget(self.lang_lbl)
+        self.top_row.addWidget(self.lang_combo)
+        self.right_layout.removeWidget(self.plot_panel)
+        win.layout().addWidget(self.plot_panel)
+        self.plot_panel.show()
+        self.detached_box.setVisible(True)
+        self.btn_detach.setText(T("btn_attach"))
+        self.btn_detach.setToolTip(T("btn_attach_tip"))
+        self._detached = True
+        win.show()
+        win.raise_()
+        win.activateWindow()
+
+    def attach_plots(self):
+        """Put the plot panel back into the main window (also what closing the plot window does)."""
+        if not self._detached:
+            return
+        win = self.plot_window
+        self._detached = False
+        for w in (self.status, self.lang_lbl, self.lang_combo):
+            self.top_row.removeWidget(w)
+        item = self.plot_tb.takeAt(self._TB_VAR)             # the stretch that stood in for them
+        del item
+        self.plot_tb.insertWidget(self._TB_VAR, self.status, 1)
+        self.plot_tb.insertWidget(self._TB_VAR + 1, self.lang_lbl)
+        self.plot_tb.insertWidget(self._TB_VAR + 2, self.lang_combo)
+        win.layout().removeWidget(self.plot_panel)
+        self.right_layout.insertWidget(1, self.plot_panel, 1)
+        self.plot_panel.show()
+        self.detached_box.setVisible(False)
+        self.btn_detach.setText(T("btn_detach"))
+        self.btn_detach.setToolTip(T("btn_detach_tip"))
+        win.hide()
 
     # ------------------------------------------------------------------ language
     def _on_lang_changed(self, _i):
@@ -553,6 +668,9 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         QtCore.QSettings(*SETTINGS).setValue("lang", lang)
         # keep the configuration, restart the (live) session: the widgets are rebuilt in the new language
+        was_detached = self._detached
+        if was_detached:
+            self.attach_plots()                              # the old panel goes back, then is deleted with its parent
         cfg = self.build_config()
         self.live_timer.stop()
         self.live_state = "stopped"
@@ -567,6 +685,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._first_autorange = True
         self.main_res = self.base_res = self.metrics = self.base_metrics = None
         self._on_param_changed(None, 0.0)
+        if was_detached:
+            self.detach_plots()
 
     # ------------------------------------------------------------------ controller rows
     def _build_ctrl_rows(self, name: str, params: dict[str, float]):

@@ -61,6 +61,15 @@ come con "Adatta vista"; lo zoom su y di un grafico selezionato spegne l'auto-ra
 ![Checkbox zoom: x ingrandito, y del grafico delay deselezionato](img/gui_zoom_it.png)
 *La stessa simulazione dopo quattro scatti di rotella sul grafico dell'offset (il suo **zoom y** selezionato) e uno su quello del delay (il suo **zoom y** deselezionato): l'asse del tempo è ingrandito in entrambi i grafici (≈ 1–20 s); solo la y dell'offset è ingrandita (da −30 a 20 µs), quella del delay no: si riscala soltanto sui dati visibili nell'intervallo di tempo ingrandito.*
 
+**Staccare i grafici.** Il pulsante **Stacca grafici** (in alto a destra nella barra dei grafici) sposta i grafici, con
+tutti i loro controlli (unità, vista, *Adatta vista*, cosa mostrare, zoom), in una finestra propria, che si apre grande
+(85 % dello schermo) e si può spostare su un altro monitor. La finestra principale conserva i parametri, lo stato, la
+lingua e la tabella delle metriche, e mostra un pulsante **Riporta i grafici qui** al posto dei grafici. I grafici
+tornano in tre modi: quel pulsante, il pulsante **Riporta i grafici qui** della finestra dei grafici, oppure chiudendo la
+finestra dei grafici con la sua **X** (non si perde nulla: simulazione, modalità live e stato dello zoom proseguono
+invariati). Cambiando lingua da staccati i grafici restano staccati. Nota: la barra del titolo appartiene al window
+manager e non può avere un pulsante personalizzato; la chiusura della finestra è la via di ritorno dalla barra del titolo.
+
 * *Grafico Delay*: la stima del delay del firmware (verde) è **tenuta** fino all'elaborazione della Delay_Resp successiva, con un
   punto a ogni campione (così si vede la frequenza reale dei campioni); la linea nera tratteggiata è il delay fisico della rete.
 * *Grafico Offset*: offset reale (blu), stimato (arancio), opzionalmente la baseline (rosa, tratteggiata) per confronto:

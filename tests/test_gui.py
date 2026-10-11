@@ -280,3 +280,72 @@ def test_delay_rate_comp_checkbox_round_trips_and_defaults_to_off(win):
     assert win.chk_dcomp.isChecked() and win.build_config().to_dict() == on.to_dict()
     win._apply_cfg_to_widgets(SimConfig.load(CONFIGS[0]))
     assert not win.chk_dcomp.isChecked()
+
+
+# --------------------------------------------------------------------------- detachable plots
+
+def _fresh_window(lang="en"):
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    w = MainWindow(start_worker=False, lang=lang)
+    w.show()
+    return w
+
+
+def test_plots_detach_into_their_own_window_and_come_back():
+    w = _fresh_window()
+    cfg = w.build_config().to_dict()
+    assert w.plot_panel.window() is w and not w.detached_box.isVisible()
+    w.btn_detach.click()
+    assert w._detached and w.plot_panel.window() is w.plot_window and w.plot_window.isVisible()
+    assert w.plot_panel.isVisible() and w.detached_box.isVisible()
+    # the plot controls went with the plots; status and language stayed in the main window
+    for ctl in (w.units, w.view_combo, w.chk_overlay, w.chk_diag, w.chk_zoom_x, w.btn_detach, w.pw_off, w.pw_delay):
+        assert ctl.window() is w.plot_window
+    for ctl in (w.status, w.lang_combo, w.table, w.tabs, w.btn_reattach):
+        assert ctl.window() is w
+    assert w.btn_detach.text() == "Reattach plots"
+    assert w.build_config().to_dict() == cfg
+    w.btn_reattach.click()                                   # the button left in the main window
+    assert not w._detached and w.plot_panel.window() is w and not w.plot_window.isVisible()
+    assert not w.detached_box.isVisible() and w.btn_detach.text() == "Detach plots"
+    assert w.status.window() is w and w.lang_combo.window() is w
+    w.btn_detach.click()
+    w.btn_detach.click()                                     # the toolbar button toggles
+    assert not w._detached and w.plot_panel.window() is w
+    w.close()
+
+
+def test_closing_the_plot_window_reattaches_the_plots():
+    w = _fresh_window()
+    w.detach_plots()
+    w.plot_window.close()                                    # the X of the window
+    assert not w._detached and w.plot_panel.window() is w and w.plot_panel.isVisible()
+    w.close()
+
+
+def test_closing_the_main_window_closes_the_plot_window():
+    w = _fresh_window()
+    w.detach_plots()
+    pw = w.plot_window
+    w.close()
+    assert not pw.isVisible()
+
+
+def test_language_change_keeps_the_plots_detached_and_leaves_no_orphans():
+    from ptpsim.gui import i18n
+    w = _fresh_window("en")
+    try:
+        w.detach_plots()
+        old_panel = w.plot_panel
+        w.lang_combo.setCurrentIndex(w.lang_combo.findData("it"))
+        assert w._detached and w.plot_panel is not old_panel
+        assert w.plot_panel.window() is w.plot_window and w.plot_window.isVisible()
+        assert w.plot_window.layout().count() == 1            # only the new panel
+        assert w.plot_window.windowTitle() == i18n.T("title_plots") and "grafici" in w.plot_window.windowTitle()
+        assert w.btn_detach.text() == "Riporta i grafici qui"
+        w.attach_plots()
+        assert w.plot_panel.window() is w and w.btn_detach.text() == "Stacca grafici"
+    finally:
+        w.lang_combo.setCurrentIndex(w.lang_combo.findData("en"))   # the language is stored in QSettings: put it back
+        i18n.set_lang("en")
+        w.close()

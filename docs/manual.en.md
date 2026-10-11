@@ -62,6 +62,15 @@ in the zoomed x range, as in "Fit view"; zooming on y with a checked plot switch
 ![Zoom checkboxes: x zoomed, y of the delay plot unchecked](img/gui_zoom_en.png)
 *The same run after four wheel notches over the offset plot (its **zoom y** checked) and one over the delay plot (its **zoom y** unchecked): the time axis is zoomed in both plots (≈ 1–20 s); only the offset plot's y is zoomed (−30 to 20 µs), the delay plot's y is not — it merely rescales to the data visible in the zoomed time range.*
 
+**Detach plots.** The **Detach plots** button (top right of the plot toolbar) moves the plots, together with all their
+controls (units, view, *Fit view*, what to show, zoom), into a window of their own, which opens large (85 % of the
+screen) and can be moved to another monitor. The main window keeps the parameters, the status, the language and the
+metrics table, and shows a **Reattach plots** button where the plots were. The plots come back in three ways:
+that button, the **Reattach plots** button of the plot window, or simply closing the plot window with its **X** (nothing
+is lost: the simulation, live mode and the zoom state go on unchanged). Changing the language while detached keeps the
+plots detached. Note: the window title bar belongs to the window manager, so it cannot carry a custom button; closing
+the window is the title-bar way back.
+
 * *Delay plot*: the firmware's delay estimate (green) is **held** until the next Delay_Resp is processed, with a dot at
   every sample (so the real sampling rate is visible); the dashed black line is the physical delay of the network.
 * *Offset plot*: true offset (blue), estimated offset (orange), optionally the baseline (pink, dashed) for comparison:
