@@ -20,7 +20,7 @@ C_GM, C_SLAVE = "#F0E442", "#56B4E9"               # Okabe-Ito yellow / sky blue
 GM_LEVELS, SLAVE_LEVELS = (2.0, 3.0), (0.0, 1.0)
 TIMEBASES_NS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1e3, 2e3, 5e3, 1e4, 2e4, 5e4, 1e5, 2e5]     # per division
 SPEEDS = [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]                                          # simulated s / wall s
-PERSIST_S = [0.0, 0.01, 0.1, 1.0, 10.0]
+PERSIST_S = [0.0, 0.01, 0.1, 1.0, 10.0, 60.0]
 DIVISIONS = 5                                        # per side of the trigger
 N_GHOSTS = 24
 FRAME_MS = 33
@@ -149,7 +149,8 @@ class ScopeWindow(QtWidgets.QWidget):
         tr.addWidget(QtWidgets.QLabel(T("scope_persist")))
         self.persist = QtWidgets.QComboBox()
         for v in PERSIST_S:
-            self.persist.addItem(T("scope_persist_off") if v == 0 else f"{v * 1e3:g} ms" if v < 1 else f"{v:g} s", v)
+            self.persist.addItem(T("scope_persist_off") if v == 0 else f"{v * 1e3:g} ms" if v < 1 else
+                                 f"{v / 60:g} min" if v >= 60 else f"{v:g} s", v)
         self.persist.setToolTip(T("scope_persist_tip"))
         self.persist.currentIndexChanged.connect(lambda *_: self._draw())
         tr.addWidget(self.persist)
