@@ -677,15 +677,15 @@ class MainWindow(QtWidgets.QMainWindow):
         """Open (or raise) the oscilloscope window; it shows the current Exploration result."""
         if self.scope_win is None:
             self.scope_win = ScopeWindow()
+        self.scope_win.show()                                # visible first: _push_scope() skips a hidden window
         self._push_scope()
-        self.scope_win.show()
         self.scope_win.raise_()
         self.scope_win.activateWindow()
 
     def _push_scope(self):
         """Give the oscilloscope the slave-clock segments of the Exploration result (nothing in live mode)."""
-        if self.scope_win is None:
-            return
+        if self.scope_win is None or not self.scope_win.isVisible():
+            return                                           # hidden: the next open_scope() pushes the current result
         res = self.main_res if self.mode == "explore" else None
         if res is not None and "scope_bp" in res:
             self.scope_win.set_data(res["scope_bp"], res["t_end"])
@@ -703,6 +703,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if was_detached:
             self.attach_plots()                              # the old panel goes back, then is deleted with its parent
         scope_open = self.scope_win is not None and self.scope_win.isVisible()
+        scope_state = self.scope_win.state() if self.scope_win is not None else None
         if self.scope_win is not None:                       # its strings are fixed at construction: build it again
             self.scope_win.force_close()
             self.scope_win.deleteLater()
@@ -725,6 +726,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.detach_plots()
         if scope_open:
             self.open_scope()
+            self.scope_win.restore(scope_state)              # position, speed, timebase, persistence, loop, geometry
 
     # ------------------------------------------------------------------ controller rows
     def _build_ctrl_rows(self, name: str, params: dict[str, float]):

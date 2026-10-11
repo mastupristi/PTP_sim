@@ -24,6 +24,7 @@ PERSIST_S = [0.0, 0.01, 0.1, 1.0, 10.0]
 DIVISIONS = 5                                        # per side of the trigger
 N_GHOSTS = 24
 FRAME_MS = 33
+ZOOM_IN_HOLD_S = 0.6                                 # auto timebase: wall time a smaller offset must last (playing)
 
 
 def fmt_ns(v: float, signed: bool = True) -> str:
@@ -56,6 +57,7 @@ class ScopeWindow(QtWidgets.QWidget):
         self._force = False
         self._last_wall = 0.0
         self._tb_auto = TIMEBASES_NS[-1]
+        self._small_since: float | None = None
         self._t_end = 0.0
         self.tb_ns = TIMEBASES_NS[-1]                # timebase of the last drawing
         self.setWindowTitle(T("scope_title"))
@@ -275,11 +277,22 @@ class ScopeWindow(QtWidgets.QWidget):
         self._draw()
 
     # ------------------------------------------------------------------ drawing
-    def _timebase(self, edge_ns: float) -> float:
+    def _timebase(self, max_edge_ns: float) -> float:
+        """Fixed timebase, or auto: zoom out at once when an edge would leave the screen; zoom in at once when not
+        playing (slider, steps) and, while playing, only after the offset stayed small for ``ZOOM_IN_HOLD_S`` -- the
+        offset crosses zero during the transient and the scale must not jump there and back."""
         fixed = self.tb.currentData()
         if fixed:
             return float(fixed)
-        self._tb_auto = pick_timebase_ns(edge_ns, TIMEBASES_NS, self._tb_auto)
+        need = float(pick_timebase_ns(max_edge_ns, TIMEBASES_NS))
+        if need >= self._tb_auto or self.dir == 0:
+            self._tb_auto, self._small_since = need, None
+        else:
+            now = time.perf_counter()
+            if self._small_since is None:
+                self._small_since = now
+            elif now - self._small_since >= ZOOM_IN_HOLD_S:
+                self._tb_auto, self._small_since = need, None
         return float(self._tb_auto)
 
     def _draw(self):
@@ -287,7 +300,14 @@ class ScopeWindow(QtWidgets.QWidget):
             return
         k = int(round(self.pos))
         sw = self.model.sweep(k)
-        tb = self._timebase(sw.edge_ns)
+        # persistence: earlier sweeps, evenly spread over the chosen span, fading with age
+        span = self.persist.currentData() or 0.0
+        ghosts = []
+        if span > 0 and k > 0:
+            ks = k - np.linspace(0, span * self.sweeps_per_s, N_GHOSTS + 1)[1:]
+            ks = np.unique(np.clip(np.round(ks), 0, k).astype(np.int64))[::-1]
+            ghosts = [self.model.sweep(int(kk)) for kk in ks[ks != k][:N_GHOSTS]]
+        tb = self._timebase(max([abs(sw.edge_ns)] + [abs(g.edge_ns) for g in ghosts]))
         self.tb_ns = tb
         half_screen = DIVISIONS * tb
         x0, x1 = -half_screen, half_screen
@@ -299,21 +319,12 @@ class ScopeWindow(QtWidgets.QWidget):
         self.gm_curve.setData(gx * ns, gy)
         sx, sy = square_xy(sw.edge_ns, sw.half_ns, x0, x1, *SLAVE_LEVELS)
         self.slave_curve.setData(sx * ns, sy)
-        # persistence: earlier sweeps, evenly spread over the chosen span, fading with age
-        span = self.persist.currentData() or 0.0
-        n_ghost = 0
-        if span > 0 and k > 0:
-            ks = k - np.linspace(0, span * self.sweeps_per_s, N_GHOSTS + 1)[1:]
-            ks = np.unique(np.clip(np.round(ks), 0, k).astype(np.int64))[::-1]
-            ks = ks[ks != k]
-            for i, kk in enumerate(ks[:N_GHOSTS]):
-                g = self.model.sweep(int(kk))
-                gx2, gy2 = square_xy(g.edge_ns, g.half_ns, x0, x1, *SLAVE_LEVELS)
-                alpha = int(160 * (1 - i / max(1, len(ks))) ** 1.5) + 20
-                self.ghosts[i].setPen(pg.mkPen(QtGui.QColor(86, 180, 233, alpha), width=1.5))
-                self.ghosts[i].setData(gx2 * ns, gy2)
-                n_ghost += 1
-        for c in self.ghosts[n_ghost:]:
+        for i, g in enumerate(ghosts):
+            gx2, gy2 = square_xy(g.edge_ns, g.half_ns, x0, x1, *SLAVE_LEVELS)
+            alpha = int(160 * (1 - i / max(1, len(ghosts))) ** 1.5) + 20
+            self.ghosts[i].setPen(pg.mkPen(QtGui.QColor(86, 180, 233, alpha), width=1.5))
+            self.ghosts[i].setData(gx2 * ns, gy2)
+        for c in self.ghosts[len(ghosts):]:
             c.setData([], [])
         self.lbl_gm.setPos(x0 * ns, GM_LEVELS[1] + 0.05)
         self.lbl_slave.setPos(x0 * ns, SLAVE_LEVELS[1] + 0.05)
@@ -325,6 +336,23 @@ class ScopeWindow(QtWidgets.QWidget):
             f"t = {sw.t_s:.3f} s · {T('scope_sweep')} #{k} · φ = {fmt_ns(sw.phi_ns)} · "
             f"{T('scope_edge')} = {fmt_ns(sw.edge_ns)} · {fmt_tb(tb)}{warn}")
         self.time_lbl.setText(f"{sw.t_s:.3f} s / {self._t_end:.3f} s")
+
+    # ------------------------------------------------------------------ state (kept over a language change)
+    def state(self) -> dict:
+        return {"pos": self.pos, "speed": self.speed.currentIndex(), "tb": self.tb.currentIndex(),
+                "persist": self.persist.currentIndex(), "loop": self.chk_loop.isChecked(),
+                "geometry": self.saveGeometry()}
+
+    def restore(self, st: dict) -> None:
+        self.speed.setCurrentIndex(st["speed"])
+        self.tb.setCurrentIndex(st["tb"])
+        self.persist.setCurrentIndex(st["persist"])
+        self.chk_loop.setChecked(st["loop"])
+        self.restoreGeometry(st["geometry"])
+        if self.model is not None:
+            self.set_position(st["pos"])
+        else:
+            self.pos = st["pos"]
 
     # ------------------------------------------------------------------ closing
     def force_close(self):

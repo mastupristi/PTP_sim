@@ -111,10 +111,9 @@ def test_square_xy_levels_and_edges():
     assert list(np.unique(y2)) == [0.0]
 
 
-def test_pick_timebase_hysteresis():
+def test_pick_timebase():
     tbs = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]
     assert pick_timebase_ns(0.0, tbs) == 1
     assert pick_timebase_ns(100.0, tbs) == 50                       # 5 div * 50 = 250 >= 125
-    assert pick_timebase_ns(100.0, tbs, current=100) == 100         # one step finer is not worth a change
-    assert pick_timebase_ns(10.0, tbs, current=100) == 5            # far finer: change
-    assert pick_timebase_ns(1e9, tbs) == 1000
+    assert pick_timebase_ns(-100.0, tbs) == 50
+    assert pick_timebase_ns(1e9, tbs) == 1000                       # larger than everything: the coarsest

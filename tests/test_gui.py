@@ -464,3 +464,48 @@ def test_language_change_rebuilds_the_open_scope_window():
         if w.scope_win is not None:
             w.scope_win.force_close()
         w.close()
+
+
+def test_scope_auto_timebase_does_not_jump_while_playing():
+    from ptpsim.gui.scope_window import ScopeWindow
+    _ = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    sc = ScopeWindow()
+    res = _scope_result(30.0)
+    sc.set_data(res["scope_bp"], res["t_end"])
+    sc.set_position(3000)
+    sc.set_direction(1)
+    sc.timer.stop()                                   # frames are driven by hand below
+    seen = []
+    for k in range(3000, 12_000, 333):                # the transient at 10x: 333 sweeps per frame, zero crossings
+        sc.pos = float(k)
+        sc._draw()
+        seen.append(sc.tb_ns)
+    assert seen == sorted(seen)                       # never zooms in within the hold time (frames take microseconds here)
+    # not playing (slider): zooms in at once
+    sc.set_direction(0)
+    sc.set_position(12_000)
+    assert sc.tb_ns < seen[-1] or seen[-1] <= 1000
+    sc.force_close()
+
+
+def test_language_change_keeps_the_scope_state():
+    from ptpsim.gui import i18n
+    w = _fresh_window("en")
+    try:
+        w.main_res = _scope_result(20.0)
+        w.open_scope()
+        sc = w.scope_win
+        sc.set_position(4321)
+        sc.speed.setCurrentIndex(2)
+        sc.persist.setCurrentIndex(3)
+        sc.chk_loop.setChecked(True)
+        w.lang_combo.setCurrentIndex(w.lang_combo.findData("it"))
+        sc2 = w.scope_win
+        assert sc2 is not sc and sc2.pos == 4321 and sc2.speed.currentIndex() == 2
+        assert sc2.persist.currentIndex() == 3 and sc2.chk_loop.isChecked()
+    finally:
+        w.lang_combo.setCurrentIndex(w.lang_combo.findData("en"))
+        i18n.set_lang("en")
+        if w.scope_win is not None:
+            w.scope_win.force_close()
+        w.close()

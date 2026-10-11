@@ -27,7 +27,7 @@ ptpsim-gui [scenario.json] [--lang en|it]   # interactive GUI (English default, 
 ptpsim-run run --config configs/default_deterministic.json --out results/run   # headless + CSV
 ptpsim-run run --preset noisy --set intervals.sync_log=-3 --set seed=5 --out results/run_noisy
 ptpsim-run compare --out results      # baseline vs variant, writes results/comparison.{csv,md}
-pytest                                # 166 tests (the C-reference tests need gcc, the GUI tests Qt)
+pytest                                # 168 tests (the C-reference tests need gcc, the GUI tests Qt)
 python bench/benchmark.py             # engine benchmark   (bench/gui_latency.py: GUI reactivity)
 ```
 

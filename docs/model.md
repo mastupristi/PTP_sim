@@ -198,7 +198,7 @@ trigger and reduced to `[−P/2, P/2)`. The solve is exact (a bisect on the segm
 the next segment); the first-order `d = −φ` is wrong by `slope·φ` (2.4 ns at 20 ppm and 120 µs). The integer part of the
 phase (a PHC at 0 against a 1.7e18 ns epoch) is reduced modulo `P` *as an integer* before the float part is added, so
 the picture keeps ns resolution. When `|φ| > P/2` the wave only shows `φ mod P` (the sweep is flagged `ambiguous`).
-Nothing is stored per edge: any sweep of the run is computed on demand, so the playback length is the simulated duration.
+Nothing is stored per edge: any sweep of the run is computed on demand, so the playback length is the simulated duration. The result carries the slave-clock segments (int64 anchors, integer and float phase, slope): 1,189 segments for the default 300 s run (38 kB of 610 kB), 14,389 for 3,600 s (0.46 MB of 2.5 MB); building the model takes 0.06–0.3 ms and a frame with 24 persistence traces about 8 ms (offscreen).
 
 Approximations: the slave wave comes from the average-rate clock model (it ignores the NXP timer tick, see §5) and has
 no output jitter. The oscilloscope shows Exploration results only (live mode would need the breakpoint stream

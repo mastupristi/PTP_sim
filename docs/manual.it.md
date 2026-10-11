@@ -76,9 +76,9 @@ muove mai, quella dello slave (azzurra) è l'onda quadra sincrona con il *clock 
 l'offset reale (slave in anticipo → fronte a sinistra del trigger). Mostra il risultato dell'**Esplorazione** (in
 modalità live lo dice). Controlli: play/pausa (Spazio), rewind (riproduzione all'indietro), inizio / fine, ±1
 scansione, uno slider per posizionare la riproduzione (la lunghezza è la durata simulata; non si memorizza nulla per
-fronte, quindi non costa nulla nemmeno su simulazioni lunghe), la casella **ripeti**, la **velocità** (secondi simulati
+fronte: col risultato viaggiano solo i segmenti del clock slave, circa 1.200 per 300 s (38 kB, il 6 % del risultato) e 14.000 per un'ora (0,46 MB)), la casella **ripeti**, la **velocità** (secondi simulati
 per secondo di riproduzione: 1× = tempo reale = 1000 scansioni al secondo), la **base dei tempi** (ns/µs per divisione,
-oppure *auto*: la più fine che mostra ancora il fronte dello slave) e la **persistenza** (le scansioni precedenti, sempre
+oppure *auto*: la più fine che mostra ancora il fronte dello slave; allarga subito e stringe solo dopo che l'offset è rimasto piccolo per 0,6 s durante la riproduzione) e la **persistenza** (le scansioni precedenti, sempre
 più tenui, che rendono visibile la deriva del fronte). Sotto il grafico: tempo simulato, numero di scansione, offset reale
 φ e fronte dello slave. Un'onda a 1 kHz non può mostrare senza ambiguità un offset maggiore di mezzo periodo: in quel caso
 il disegno mostra φ modulo 1 ms e un avviso lo dice. L'onda dello slave è un'uscita ideale del modello a rate medio del

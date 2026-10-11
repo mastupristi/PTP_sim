@@ -76,9 +76,9 @@ oscilloscope triggered on the rising edge of the Grandmaster wave: the GM trace 
 (blue) is the square wave locked to the *slave clock*, so its edge sits at minus the true offset (slave ahead → edge to
 the left of the trigger). It shows the **Exploration** result (in live mode it says so). Controls: play/pause (Space),
 rewind (play backwards), start / end, ±1 sweep, a slider to position the playback (the length is the simulated duration;
-nothing is stored per edge, so it costs nothing for long runs), a **loop** checkbox, the **speed** (simulated seconds per
+nothing is stored per edge: only the slave-clock segments travel with the result, about 1,200 for 300 s (38 kB, 6 % of the result) and 14,000 for one hour (0.46 MB)), a **loop** checkbox, the **speed** (simulated seconds per
 second of playback: 1× = real time = 1000 sweeps per second), the **timebase** (ns/µs per division, or *auto*: the finest
-one that still shows the slave edge) and the **persistence** (earlier sweeps, fading with age, which makes the drift of
+one that still shows the slave edge; it zooms out at once and zooms in only after the offset stayed small for 0.6 s while playing) and the **persistence** (earlier sweeps, fading with age, which makes the drift of
 the edge visible). Under the plot: simulated time, sweep number, the true offset φ and the slave edge. A 1 kHz wave
 cannot show an offset larger than half a period unambiguously: then the picture shows φ modulo 1 ms and a warning says so.
 The slave wave is an ideal output of the average-rate clock model (no NXP timer tick, no output jitter).

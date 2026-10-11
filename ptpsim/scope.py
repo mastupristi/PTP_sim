@@ -124,12 +124,7 @@ def square_xy(rise_ns: float, half_ns: float, x0_ns: float, x1_ns: float, low: f
     return np.array(xs), np.array(ys)
 
 
-def pick_timebase_ns(edge_ns: float, available, current: float | None = None, margin: float = 1.25,
-                     divisions: int = 5) -> float:
-    """Auto timebase: smallest ns/div whose half screen (``divisions`` divisions) holds ``margin * |edge|``; going
-    back to a finer one needs the offset to shrink well below the current one (no flicker while playing)."""
+def pick_timebase_ns(edge_ns: float, available, margin: float = 1.25, divisions: int = 5) -> float:
+    """Smallest ns/div whose half screen (``divisions`` divisions) holds ``margin * |edge|`` (the largest if none)."""
     need = margin * abs(edge_ns)
-    best = next((tb for tb in available if divisions * tb >= need), available[-1])
-    if current is not None and best < current and best * 3 > current:
-        return current
-    return best
+    return next((tb for tb in available if divisions * tb >= need), available[-1])
