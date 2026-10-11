@@ -47,6 +47,10 @@ SCENES = {
     "zoom": dict(cfg={"duration_s": 90.0, "intervals.sync_log": -4, "oscillator.initial_offset_ns": 100e3,
                       "oscillator.freq_error_ppb": 0.0, "controller.name": "pi_per_second",
                       "controller.params": {"kp": 0.7, "ki": 0.3}}, overlay=True, zoom=True),
+    # oscilloscope window (the screenshot is the scope, not the main window): mid-transient, 1 s of persistence
+    "scope": dict(cfg={"duration_s": 60.0, "intervals.sync_log": -2, "oscillator.initial_offset_ns": 100e3,
+                       "oscillator.freq_error_ppb": 20000.0, "controller.name": "baseline_pi",
+                       "controller.params": {"kp": 0.7, "ki": 0.3}}, scope=dict(t_s=6.0, persist_s=1.0)),
     # recipe "Live tuning": kp raised while the run is going, change marked on the plots
     "live": dict(cfg={"duration_s": 120.0, "intervals.sync_log": -2, "oscillator.initial_offset_ns": 100e3,
                       "oscillator.freq_error_ppb": 20000.0, "controller.name": "baseline_pi",
@@ -107,9 +111,16 @@ def main(argv=None) -> int:
                     if sc.get("zoom"):
                         _zoom_scene(w, spin)
                     w.tabs.setCurrentIndex(sc.get("tab", 0))
+                shot = w
+                if sc.get("scope"):
+                    w.open_scope()
+                    shot = w.scope_win
+                    shot.resize(980, 600)
+                    shot.persist.setCurrentIndex(shot.persist.findData(sc["scope"]["persist_s"]))
+                    shot.set_position(round(sc["scope"]["t_s"] * shot.sweeps_per_s))
                 spin(400)                            # redraw, deferred deletes, layout
                 path = args.out / f"gui_{name}_{lang}.png"
-                w.grab().save(str(path))
+                shot.grab().save(str(path))
                 print(f"{path.relative_to(ROOT) if path.is_relative_to(ROOT) else path}  {w.status.text()}")
             except Exception as e:                   # keep going: report and fail at the end
                 failed += 1

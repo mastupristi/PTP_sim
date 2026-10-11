@@ -106,6 +106,13 @@ class SlaveClock:
         phi = np.array([float(b) for b in self._big]) + np.array(self._phi0)
         return (np.array(self._t0, dtype=np.int64), phi, np.array(self._slope))
 
+    def exact_breakpoints(self):
+        """(anchor times ps int64, ``big`` ns int64, ``small`` ns float64, slopes): the segments with the integer part
+        kept apart, so a huge offset (PHC at 0 against the epoch) can be reduced modulo a period without float
+        rounding.  Phase on segment i is ``big[i] + small[i] + slope[i] * (t - t0[i]) / 1000`` (ns, t in ps)."""
+        return (np.array(self._t0, dtype=np.int64), np.array(self._big, dtype=np.int64),
+                np.array(self._phi0, dtype=np.float64), np.array(self._slope, dtype=np.float64))
+
     def sample_ns(self, t_ps: np.ndarray) -> np.ndarray:
         """True offset (ns) on an array of physical times (ps, any order).  A time that
         coincides with a phase step returns the value after the step."""

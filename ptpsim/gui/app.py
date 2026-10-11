@@ -28,6 +28,7 @@ from ..controllers import POLICIES, REGISTRY
 from ..engine import interval_ps
 from .i18n import LANGS, STRINGS, T, get_lang, localize_change, set_lang
 from .params import ParamRow
+from .scope_window import ScopeWindow
 from .zoombox import ZoomViewBox
 from .worker import worker_main
 
@@ -139,6 +140,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.lim_lines: list = []            # horizontal limit lines of the PI-terms plot
         self.plot_window: PlotWindow | None = None
         self._detached = False
+        self.scope_win: ScopeWindow | None = None
 
         if start_worker:
             self._start_worker()
@@ -175,6 +177,8 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             if self.plot_window is not None:
                 self.plot_window.force_close()
+            if self.scope_win is not None:
+                self.scope_win.force_close()
             self.live_timer.stop()
             self.latest.value = -1
             if self.proc is not None:
@@ -281,6 +285,13 @@ class MainWindow(QtWidgets.QMainWindow):
         for r in (self.m_band, self.m_dwell, self.m_win):
             r.changed.disconnect(self._on_param_changed)
             r.changed.connect(lambda *_: self._on_param_changed(None, 0.0, "__metrics__"))
+        lay.addWidget(g)
+
+        g, grid = self._group(T("g_scope"))
+        self.btn_scope = QtWidgets.QPushButton(T("scope_btn"))
+        self.btn_scope.setToolTip(T("scope_btn_tip"))
+        self.btn_scope.clicked.connect(self.open_scope)
+        grid.addWidget(self.btn_scope, 0, 0, 1, 3)
         lay.addWidget(g)
 
         g, grid = self._group(T("g_files"))
@@ -661,6 +672,26 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_detach.setToolTip(T("btn_detach_tip"))
         win.hide()
 
+    # ------------------------------------------------------------------ oscilloscope
+    def open_scope(self):
+        """Open (or raise) the oscilloscope window; it shows the current Exploration result."""
+        if self.scope_win is None:
+            self.scope_win = ScopeWindow()
+        self._push_scope()
+        self.scope_win.show()
+        self.scope_win.raise_()
+        self.scope_win.activateWindow()
+
+    def _push_scope(self):
+        """Give the oscilloscope the slave-clock segments of the Exploration result (nothing in live mode)."""
+        if self.scope_win is None:
+            return
+        res = self.main_res if self.mode == "explore" else None
+        if res is not None and "scope_bp" in res:
+            self.scope_win.set_data(res["scope_bp"], res["t_end"])
+        else:
+            self.scope_win.set_data(None)
+
     # ------------------------------------------------------------------ language
     def _on_lang_changed(self, _i):
         lang = self.lang_combo.currentData()
@@ -671,6 +702,11 @@ class MainWindow(QtWidgets.QMainWindow):
         was_detached = self._detached
         if was_detached:
             self.attach_plots()                              # the old panel goes back, then is deleted with its parent
+        scope_open = self.scope_win is not None and self.scope_win.isVisible()
+        if self.scope_win is not None:                       # its strings are fixed at construction: build it again
+            self.scope_win.force_close()
+            self.scope_win.deleteLater()
+            self.scope_win = None
         cfg = self.build_config()
         self.live_timer.stop()
         self.live_state = "stopped"
@@ -687,6 +723,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._on_param_changed(None, 0.0)
         if was_detached:
             self.detach_plots()
+        if scope_open:
+            self.open_scope()
 
     # ------------------------------------------------------------------ controller rows
     def _build_ctrl_rows(self, name: str, params: dict[str, float]):
@@ -966,6 +1004,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._first_autorange = True
         self._clear_plots()
         self._update_enabled()
+        self._push_scope()
         if self.mode == "explore":
             self._request_explore()
         else:
@@ -991,6 +1030,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.metrics, self.base_metrics = msg["metrics"], msg.get("base_metrics")
             self.last_ms.update(compute=msg["compute_ms"], sim=msg["metrics"]["sim_wall_ms"])
             self.act_info.setText(self._act_text(msg["main"].get("act")))
+            self._push_scope()
             self._redraw()
             if self._first_autorange:
                 self._autorange()

@@ -50,8 +50,11 @@ def pack_result(res: SimResult, dense_dt_s: float | None = None) -> dict:
         dense_dt_s = max(0.01, res.t_end_s / 60_000.0)
     t, x = true_offset_grid(res, dense_dt_s)
     ok = np.isfinite(res.servo_offset_est_ns)
+    t0, big, small, slope = res.clock.exact_breakpoints()
     return {
         "t_end": res.t_end_s,
+        # exact slave-clock segments for the oscilloscope view (explore results only)
+        "scope_bp": {"t0_ps": t0, "big_ns": big, "small_ns": small, "slope": slope},
         "true_t": t, "true_x": x,
         "est_t": res.servo_t_sample_s[ok], "est_x": res.servo_offset_est_ns[ok],
         "est_action": res.servo_action[ok],

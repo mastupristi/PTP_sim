@@ -70,6 +70,23 @@ finestra dei grafici con la sua **X** (non si perde nulla: simulazione, modalit�
 invariati). Cambiando lingua da staccati i grafici restano staccati. Nota: la barra del titolo appartiene al window
 manager e non può avere un pulsante personalizzato; la chiusura della finestra è la via di ritorno dalla barra del titolo.
 
+**Oscilloscopio.** Il pulsante **Apri oscilloscopio…** (scheda Esecuzione) apre una finestra che disegna due onde quadre a
+1 kHz come su un oscilloscopio con trigger sul fronte di salita dell'onda del Grandmaster: la traccia GM (gialla) non si
+muove mai, quella dello slave (azzurra) è l'onda quadra sincrona con il *clock slave*, quindi il suo fronte sta a meno
+l'offset reale (slave in anticipo → fronte a sinistra del trigger). Mostra il risultato dell'**Esplorazione** (in
+modalità live lo dice). Controlli: play/pausa (Spazio), rewind (riproduzione all'indietro), inizio / fine, ±1
+scansione, uno slider per posizionare la riproduzione (la lunghezza è la durata simulata; non si memorizza nulla per
+fronte, quindi non costa nulla nemmeno su simulazioni lunghe), la casella **ripeti**, la **velocità** (secondi simulati
+per secondo di riproduzione: 1× = tempo reale = 1000 scansioni al secondo), la **base dei tempi** (ns/µs per divisione,
+oppure *auto*: la più fine che mostra ancora il fronte dello slave) e la **persistenza** (le scansioni precedenti, sempre
+più tenui, che rendono visibile la deriva del fronte). Sotto il grafico: tempo simulato, numero di scansione, offset reale
+φ e fronte dello slave. Un'onda a 1 kHz non può mostrare senza ambiguità un offset maggiore di mezzo periodo: in quel caso
+il disegno mostra φ modulo 1 ms e un avviso lo dice. L'onda dello slave è un'uscita ideale del modello a rate medio del
+clock (niente tick del timer NXP, niente jitter sull'uscita).
+
+![Finestra dell'oscilloscopio](img/gui_scope_it.png)
+*L'oscilloscopio nello scenario di default (offset iniziale 100 µs, 20 ppm) a 6 s dall'inizio, persistenza 1 s: il fronte dello slave, 46 µs dopo il trigger del GM, si sta avvicinando (i fronti tenui sono le scansioni precedenti).*
+
 * *Grafico Delay*: la stima del delay del firmware (verde) è **tenuta** fino all'elaborazione della Delay_Resp successiva, con un
   punto a ogni campione (così si vede la frequenza reale dei campioni); la linea nera tratteggiata è il delay fisico della rete.
 * *Grafico Offset*: offset reale (blu), stimato (arancio), opzionalmente la baseline (rosa, tratteggiata) per confronto:

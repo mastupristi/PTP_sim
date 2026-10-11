@@ -226,6 +226,46 @@ STRINGS: dict[str, dict] = {
                          "Riporta i grafici nella finestra principale (come chiudere questa finestra)"),
     "plots_detached": _s("The plots are in a separate window.", "I grafici sono in una finestra separata."),
     "title_plots": _s("PTP_sim — plots", "PTP_sim — grafici"),
+    # oscilloscope window
+    "g_scope": _s("Oscilloscope", "Oscilloscopio"),
+    "scope_btn": _s("Open oscilloscope…", "Apri oscilloscopio…"),
+    "scope_btn_tip": _s("Two 1 kHz square waves, one locked to the GM and one to the slave clock, drawn like an "
+                        "oscilloscope triggered on the GM rising edge (needs an Exploration result).",
+                        "Due onde quadre a 1 kHz, una sincrona con il GM e una con il clock slave, disegnate come su un "
+                        "oscilloscopio con trigger sul fronte di salita del GM (richiede un risultato di Esplorazione)."),
+    "scope_title": _s("PTP_sim — oscilloscope", "PTP_sim — oscilloscopio"),
+    "scope_na": _s("The oscilloscope shows the Exploration result: switch to Exploration mode.",
+                   "L'oscilloscopio mostra il risultato dell'Esplorazione: passa alla modalità Esplorazione."),
+    "scope_ax": _s("time relative to the GM trigger", "tempo rispetto al trigger GM"),
+    "scope_gm": _s("GM", "GM"),
+    "scope_slave": _s("Slave", "Slave"),
+    "scope_trig": _s("trigger", "trigger"),
+    "scope_loop": _s("loop", "ripeti"),
+    "scope_speed": _s("speed", "velocità"),
+    "scope_speed_tip": _s("Simulated seconds per second of playback (1× = real time: 1000 sweeps per second).",
+                          "Secondi simulati per secondo di riproduzione (1× = tempo reale: 1000 scansioni al secondo)."),
+    "scope_timebase": _s("timebase", "base dei tempi"),
+    "scope_tb_auto": _s("auto", "auto"),
+    "scope_tb_tip": _s("Time per division (10 divisions, trigger in the centre). Auto picks the finest one that shows "
+                       "the slave edge.",
+                       "Tempo per divisione (10 divisioni, trigger al centro). Auto sceglie la più fine che mostra il "
+                       "fronte dello slave."),
+    "scope_persist": _s("persistence", "persistenza"),
+    "scope_persist_off": _s("off", "off"),
+    "scope_persist_tip": _s("Also draws earlier sweeps (up to this much simulated time), fading with age: it makes the "
+                            "drift of the slave edge visible.",
+                            "Disegna anche le scansioni precedenti (fino a questo tempo simulato), sempre più tenui: "
+                            "rende visibile la deriva del fronte dello slave."),
+    "scope_sweep": _s("sweep", "scansione"),
+    "scope_edge": _s("slave edge", "fronte slave"),
+    "scope_ambiguous": _s("|φ| > half period: the wave shows φ modulo {p}",
+                          "|φ| > mezzo periodo: l'onda mostra φ modulo {p}"),
+    "scope_tip_start": _s("Back to the start", "Torna all'inizio"),
+    "scope_tip_rev": _s("Rewind (play backwards)", "Riavvolgi (riproduzione all'indietro)"),
+    "scope_tip_back": _s("Previous sweep", "Scansione precedente"),
+    "scope_tip_play": _s("Play / pause (Space)", "Riproduci / pausa (Spazio)"),
+    "scope_tip_fwd": _s("Next sweep", "Scansione successiva"),
+    "scope_tip_end": _s("Go to the end", "Vai alla fine"),
     "lang": _s("Language:", "Lingua:"),
     # --- status
     "st_start": _s("starting worker…", "avvio worker…"),

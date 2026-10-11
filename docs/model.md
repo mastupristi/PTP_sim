@@ -189,6 +189,23 @@ stable than that (README finding 3).
 
 See the README and the docstring of `ptpsim/metrics.py` for the exact definitions.
 
+## 7b. Oscilloscope view (`ptpsim/scope.py`)
+
+Two ideal square waves at 1 kHz (50 %): the GM one has its rising edges at `k·P` of the physical time; the slave one
+has them whenever the *slave clock reads* `k·P`. The scope triggers on the GM edge, so a sweep shows the slave edge at
+`d` with `d·(1 + slope) = −A`, where `A` is the phase of the slave-clock segment containing the edge, extrapolated to the
+trigger and reduced to `[−P/2, P/2)`. The solve is exact (a bisect on the segment breakpoints, repeated if the edge falls in
+the next segment); the first-order `d = −φ` is wrong by `slope·φ` (2.4 ns at 20 ppm and 120 µs). The integer part of the
+phase (a PHC at 0 against a 1.7e18 ns epoch) is reduced modulo `P` *as an integer* before the float part is added, so
+the picture keeps ns resolution. When `|φ| > P/2` the wave only shows `φ mod P` (the sweep is flagged `ambiguous`).
+Nothing is stored per edge: any sweep of the run is computed on demand, so the playback length is the simulated duration.
+
+Approximations: the slave wave comes from the average-rate clock model (it ignores the NXP timer tick, see §5) and has
+no output jitter. The oscilloscope shows Exploration results only (live mode would need the breakpoint stream
+in `LiveSession.delta()`; not done). Tests: `tests/test_scope.py` (identical clocks, sign, linear drift, exact solve
+within 1 ps against the clock, phase step, huge offset, ambiguity), `tests/test_gui.py` (transport, timebase,
+persistence, main-window wiring).
+
 ## 8. Test matrix (CLAUDE.md §10 → tests)
 
 | Requirement | Test |

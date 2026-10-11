@@ -71,6 +71,21 @@ is lost: the simulation, live mode and the zoom state go on unchanged). Changing
 plots detached. Note: the window title bar belongs to the window manager, so it cannot carry a custom button; closing
 the window is the title-bar way back.
 
+**Oscilloscope.** The **Open oscilloscope…** button (Run tab) opens a window that draws two 1 kHz square waves like an
+oscilloscope triggered on the rising edge of the Grandmaster wave: the GM trace (yellow) never moves, the slave trace
+(blue) is the square wave locked to the *slave clock*, so its edge sits at minus the true offset (slave ahead → edge to
+the left of the trigger). It shows the **Exploration** result (in live mode it says so). Controls: play/pause (Space),
+rewind (play backwards), start / end, ±1 sweep, a slider to position the playback (the length is the simulated duration;
+nothing is stored per edge, so it costs nothing for long runs), a **loop** checkbox, the **speed** (simulated seconds per
+second of playback: 1× = real time = 1000 sweeps per second), the **timebase** (ns/µs per division, or *auto*: the finest
+one that still shows the slave edge) and the **persistence** (earlier sweeps, fading with age, which makes the drift of
+the edge visible). Under the plot: simulated time, sweep number, the true offset φ and the slave edge. A 1 kHz wave
+cannot show an offset larger than half a period unambiguously: then the picture shows φ modulo 1 ms and a warning says so.
+The slave wave is an ideal output of the average-rate clock model (no NXP timer tick, no output jitter).
+
+![Oscilloscope window](img/gui_scope_en.png)
+*The oscilloscope in the default scenario (100 µs initial offset, 20 ppm) 6 s into the run, persistence 1 s: the slave edge, 46 µs after the GM trigger, is closing in on it (the faint edges are the earlier sweeps).*
+
 * *Delay plot*: the firmware's delay estimate (green) is **held** until the next Delay_Resp is processed, with a dot at
   every sample (so the real sampling rate is visible); the dashed black line is the physical delay of the network.
 * *Offset plot*: true offset (blue), estimated offset (orange), optionally the baseline (pink, dashed) for comparison:

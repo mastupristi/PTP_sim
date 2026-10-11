@@ -349,3 +349,118 @@ def test_language_change_keeps_the_plots_detached_and_leaves_no_orphans():
         w.lang_combo.setCurrentIndex(w.lang_combo.findData("en"))   # the language is stored in QSettings: put it back
         i18n.set_lang("en")
         w.close()
+
+
+# ---------------------------------------------------------------------------------------- oscilloscope window
+def _scope_result(duration=30.0):
+    from ptpsim.engine import Simulation
+    from ptpsim.live import pack_result
+    cfg = SimConfig.load(Path(__file__).parent.parent / "configs" / "default_deterministic.json")
+    cfg = cfg.with_overrides(duration_s=duration)
+    sim = Simulation(cfg)
+    sim.run_until(duration)
+    return pack_result(sim.result())
+
+
+def test_scope_window_needs_an_explore_result_and_plays_it():
+    from ptpsim.gui.scope_window import ScopeWindow
+    _ = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    sc = ScopeWindow()
+    assert not sc.slider.isEnabled() and sc.model is None                # nothing to show yet
+    res = _scope_result(30.0)
+    sc.set_data(res["scope_bp"], res["t_end"])
+    assert sc.slider.isEnabled() and sc.n_max == 30_000 and sc.slider.maximum() == 30_000
+    sc.set_position(0)
+    assert "#0" in sc.info.text() and sc.slider.value() == 0
+    sc.go_end()
+    assert sc.pos == 30_000 and sc.slider.value() == 30_000
+    sc.step(-1)
+    assert sc.pos == 29_999 and sc.dir == 0
+    sc.slider.setValue(1234)                                              # the user drags the slider
+    assert sc.pos == 1234 and "#1234" in sc.info.text()
+    # play / pause / rewind buttons
+    sc.btn_play.click()
+    assert sc.dir == 1 and sc.timer.isActive()
+    sc.btn_play.click()
+    assert sc.dir == 0 and not sc.timer.isActive()
+    sc.set_position(20_000)
+    sc.btn_rev.click()
+    assert sc.dir == -1 and sc.btn_rev.isChecked()
+    sc._last_wall -= 0.5                                                  # half a second of wall time at 10x
+    sc._tick()
+    assert sc.pos == pytest.approx(20_000 - 0.5 * 10 * 1000, abs=300) and sc.dir == -1
+    sc.btn_start.click()
+    assert sc.pos == 0 and sc.dir == 0
+    # at the end: stops, or wraps with "loop"
+    sc.set_position(29_999)
+    sc.btn_play.click()
+    sc._last_wall -= 1.0
+    sc._tick()
+    assert sc.dir == 0 and sc.pos == 30_000
+    sc.chk_loop.setChecked(True)
+    sc.set_position(29_999)
+    sc.btn_play.click()
+    sc._last_wall -= 1.0
+    sc._tick()
+    assert sc.dir == 1 and sc.pos < 30_000
+    sc.set_direction(0)
+    # no result (live mode): disabled and stopped, position kept for the next result
+    sc.set_data(None)
+    assert not sc.slider.isEnabled() and sc.dir == 0
+    sc.force_close()
+
+
+def test_scope_timebase_and_persistence_and_ambiguity_flag():
+    from ptpsim.gui.scope_window import ScopeWindow
+    _ = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    sc = ScopeWindow()
+    res = _scope_result(60.0)
+    sc.set_data(res["scope_bp"], res["t_end"])
+    sc.set_position(1000)                                                 # t = 1 s: the 100 us initial offset is still there
+    assert sc.tb_ns >= 20_000                                             # auto timebase needs to show a ~100 us edge
+    sc.set_position(59_000)
+    assert sc.tb_ns <= 100                                                # locked: the auto timebase has zoomed in
+    fixed = sc.tb.findData(2000.0)
+    sc.tb.setCurrentIndex(fixed)
+    assert sc.tb_ns == 2000.0
+    sc.persist.setCurrentIndex(sc.persist.findData(1.0))
+    sc.set_position(10_000)
+    assert sum(len(c.xData) > 0 for c in sc.ghosts if c.xData is not None) > 0
+    sc.persist.setCurrentIndex(0)
+    assert all(c.xData is None or len(c.xData) == 0 for c in sc.ghosts)
+    sc.force_close()
+
+
+def test_main_window_feeds_the_scope_and_follows_the_mode():
+    w = _fresh_window()
+    try:
+        assert w.scope_win is None
+        w.main_res = _scope_result(20.0)
+        w.open_scope()
+        assert w.scope_win.isVisible() and w.scope_win.slider.isEnabled() and w.scope_win.n_max == 20_000
+        w.mode = "live"                                                   # no breakpoints for a live result
+        w._push_scope()
+        assert not w.scope_win.slider.isEnabled()
+        w.mode = "explore"
+        w._push_scope()
+        assert w.scope_win.slider.isEnabled()
+    finally:
+        w.close()
+    assert not w.scope_win.isVisible()                                    # closing the main window closes it
+
+
+def test_language_change_rebuilds_the_open_scope_window():
+    from ptpsim.gui import i18n
+    w = _fresh_window("en")
+    try:
+        w.main_res = _scope_result(10.0)
+        w.open_scope()
+        w.lang_combo.setCurrentIndex(w.lang_combo.findData("it"))
+        assert w.scope_win is not None and w.scope_win.isVisible()
+        assert "oscilloscopio" in w.scope_win.windowTitle()
+    finally:
+        w.lang_combo.setCurrentIndex(w.lang_combo.findData("en"))
+        i18n.set_lang("en")
+        if w.scope_win is not None:
+            w.scope_win.force_close()
+        w.close()

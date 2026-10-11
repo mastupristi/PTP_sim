@@ -27,7 +27,7 @@ ptpsim-gui [scenario.json] [--lang en|it]   # interactive GUI (English default, 
 ptpsim-run run --config configs/default_deterministic.json --out results/run   # headless + CSV
 ptpsim-run run --preset noisy --set intervals.sync_log=-3 --set seed=5 --out results/run_noisy
 ptpsim-run compare --out results      # baseline vs variant, writes results/comparison.{csv,md}
-pytest                                # 112 tests (the C-reference tests need gcc, the GUI tests Qt)
+pytest                                # 166 tests (the C-reference tests need gcc, the GUI tests Qt)
 python bench/benchmark.py             # engine benchmark   (bench/gui_latency.py: GUI reactivity)
 ```
 
@@ -53,6 +53,7 @@ at Sync 62.5 ms, 100 µs step: undershoot 22.9 µs against 64.6 µs.*
 | `ptpsim/rng.py` | disturbance streams indexed by message sequence number (reproducible seeds) |
 | `ptpsim/metrics.py`, `export.py`, `compare.py`, `analysis.py`, `cli.py` | metrics, CSV/JSON export, comparison, analytic loop model, CLI |
 | `ptpsim/gui/`, `ptpsim/live.py` | GUI (separate worker *process*), incremental live session |
+| `ptpsim/scope.py` | headless oscilloscope model: edges of the slave square wave from the exact clock breakpoints |
 | `tests/` | unit/integration tests; `tests/c_ref/` vendored Zephyr C sources compiled by the tests |
 | `configs/` | scenario files (`scripts/make_configs.py`); `results/` committed baseline-vs-variant results |
 | `bench/` | benchmarks and their recorded results |
@@ -162,7 +163,9 @@ Controls are grouped in **tabs** (Run, Controller, PTP intervals, Scenario, Netw
 the toolbar, plots sharing the time axis (**Delay**: firmware estimate held between samples with sample markers and the
 physical reference; **Offset**: estimated, true, optional overlay of the **unmodified firmware**; optional **rate
 diagnostics**; optional **PI terms**), which take all the available height, and the metrics table, always fully visible.
-Units ns/µs/ms, zoom/pan, legends; the plots can be detached into their own window (closing it re-embeds them).
+Units ns/µs/ms, zoom/pan, legends; the plots can be detached into their own window (closing it re-embeds them). An
+**oscilloscope** window plays two 1 kHz square waves (GM and slave clock) triggered on the GM rising edge, with transport
+controls, a position slider, timebase and persistence (`ptpsim/scope.py`, `ptpsim/gui/scope_window.py`).
 
 * **PI terms** plot (ppm): P = kp·e, the integrator I and the controller output at every servo update, the command applied
   to the clock (held), and lines at the active limits (actuator, command clamp, integrator limit, controller limit) — to
