@@ -96,7 +96,7 @@ The slave wave is an ideal output of the average-rate clock model (no NXP timer 
 * *PI terms* (ppm): at every servo update the proportional term **P = kp·e**, the integrator **I** and the **controller
   output** (P + I for the PI laws, before the command clamp); the **command applied** to the clock (held, green) shows the
   clamp and the return to nominal at every servo reset. Steps and rejected outliers have no update, so no point.
-  Horizontal lines mark the active limits: actuator ±50 000 ppm, command clamp, integrator limit (`pi_anti_windup`),
+  Horizontal lines mark the active limits: actuator ±50 000 ppm, command clamp, integrator limit (`i_max_ppm` of `pi_per_second`),
   controller limit (`sat_ppb` of `pi_time_aware`); they do not enter the y auto-range. Use it to size an anti-windup
   limit: how large I gets while the command is clamped, and the steady I it must still be able to hold.
 * **Transient-end line** (dashed vertical, labelled): the instant at which the true offset enters the settling band
@@ -161,24 +161,24 @@ columns — the command accepted by the driver `cmd_applied_ppb` (after the clam
   * **wn_ts_max** [rad]: caps the bandwidth at `wn·dt ≤ wn_ts_max` so the sampled loop stays stable (`kp·dt < 2`).
   * **dt_max_s** [s]: the interval measured from consecutive `t1` is clamped to this absolute value (default 10 s;
     protects against lost messages). Keep it ≥ the nominal Sync interval.
-* `pi_per_second` — `pi_anti_windup` with the integral gain scaled by the Sync interval: `integral += (ki·dt/t_ref)·e`.
+* `pi_per_second` — the firmware PI law with the integral gain scaled by the Sync interval, `integral += (ki·dt/t_ref)·e`,
+  and an integrator limit: `integral = clamp(integral, ±i_max); u = kp·e + integral`.
   Use it when you change the Sync interval and want the loop shape to stay the same: **kp** and **ki** are the gains
   tuned at **t_ref**, and `ki/t_ref` [s⁻²] is held constant (**kp** is not scaled: ppb/ns is already 1/s).
   * **t_ref_s** [s]: interval at which kp, ki are tuned (default 1 s, the interval the firmware gains are tuned for).
-    At `dt = t_ref_s` (and `kp ≤ kp_dt_max`) the law is identical to `pi_anti_windup`; at 250 ms the integrator adds ki/4 per update.
+    At `dt = t_ref_s` (and `kp ≤ kp_dt_max`) the law is the firmware one (with `i_max_ppm = 0`); at 250 ms the integrator adds ki/4 per update.
   * **dt_max_s** [s]: the measured interval (from consecutive `t1`, so a lost Sync gives a longer step) is clamped to
     this absolute value (default 10 s). Keep it ≥ the nominal Sync interval, or regular steps are clamped too.
-    **i_max_ppm** as in `pi_anti_windup`.
+  * **i_max_ppm** [ppm]: integrator limit (anti-windup); **0 = off**. It bounds the windup while the command clamp
+    saturates. It must stay **above the steady frequency correction** (oscillator error + drift): with 20 ppm of
+    oscillator error and i_max = 10 ppm, P must supply the other 10 ppm and the offset settles at 10 ppm / kp ≈ 14.3 µs
+    instead of 0.
+    To reproduce `baseline_pi` (plus the limit) at a given Sync interval set **t_ref_s** to that interval and
+    **kp_dt_max** to 0; in a run the measured `dt` carries the Sync jitter, so the match is exact only without jitter.
   * **kp_dt_max** [dimensionless]: guard on the proportional step: the applied gain is `kp_eff = min(kp, kp_dt_max/dt)`
-    (default 1; 0 = off). With `kp·dt ≤ kp_dt_max` nothing changes (e.g. the identity with `pi_anti_windup` at 1 s holds for
+    (default 1; 0 = off). With `kp·dt ≤ kp_dt_max` nothing changes (e.g. the identity with the firmware law at 1 s holds for
     `kp ≤ 1`); a larger `kp` is capped at long intervals. It is necessary, not sufficient: a large **ki** or Sync = 2 s can
     still ring or diverge (see `docs/model.md`).
-* `pi_anti_windup` — the firmware PI law (same per-update **kp**, **ki**, no dt) with an integrator limit:
-  `integral += ki·e; integral = clamp(integral, ±i_max); u = kp·e + integral`.
-  * **i_max_ppm** [ppm]: integrator limit; **0 = off**, and the controller is then identical to `baseline_pi`.
-    It bounds the windup while the command clamp saturates. It must stay **above the steady frequency correction**
-    (oscillator error + drift): with 20 ppm of oscillator error and i_max = 10 ppm, P must supply the other 10 ppm and
-    the offset settles at 10 ppm / kp ≈ 14.3 µs instead of 0.
 
 **Firmware servo (clock.c)** — options of the servo around the controller (they apply to every controller):
 * **Command clamp** (`firmware.cmd_clamp_ppm`, default 0 = off) — **not in the firmware**: the command is saturated to
@@ -305,15 +305,15 @@ All metrics use full-resolution data. For the true offset and the estimated offs
   ![pi_time_aware against the baseline, noisy network](img/gui_noisy_en.png)
   *`configs/noisy_seed1.json` (300 s, 20 ppm, 100 µs, Sync 250 ms, seed 1) with `pi_time_aware` against the baseline. True offset: transient ends at 9.61 s against 14.33 s, overshoot 12.0 % (19.2 µs) against 43.2 % (69.1 µs), steady-state RMS 189.6 ns against 185.2 ns — about the same, as the jitter sets it. The "transient end" of the *estimated* offset (284.75 s) is a noise artefact: its scatter is of the order of the 1 µs band. One seed and one band: the README table has 10 seeds.*
 * **Size the anti-windup**: Scenario → Initial offset 100 ms; Controller → Command clamp 1000 ppm; tick *PI terms*. With
-  `baseline_pi` the integrator winds up to ≈ 6×10⁶ ppm and the offset overshoots to ≈ −100 ms; select `pi_anti_windup`
-  and raise **i_max_ppm** from just above the oscillator error (20 ppm here): at 100 ppm the overshoot is ≈ 44 µs.
-  The two runs (`baseline_pi` then `pi_anti_windup`, i_max 100 ppm; 300 s, 20 ppm, 100 ms, clamp 1000 ppm, units ms):
+  `baseline_pi` the integrator winds up to ≈ 6×10⁶ ppm and the offset overshoots to ≈ −100 ms; select `pi_per_second`
+  (with **t_ref_s** = the Sync interval, 0.25 s, and **kp_dt_max** = 0, i.e. the firmware law) and raise **i_max_ppm** from just above the oscillator error (20 ppm here): at 100 ppm the overshoot is ≈ 44 µs.
+  The two runs (`baseline_pi` then `pi_per_second`, i_max 100 ppm, t_ref 0.25 s, kp_dt_max 0; 300 s, 20 ppm, 100 ms, clamp 1000 ppm, units ms):
 
   ![baseline_pi winding up](img/gui_windup_en.png)
   *`baseline_pi`: the integrator I reaches ≈ −6×10⁶ ppm while the command is clamped (1188 clamped updates) and the offset overshoots to ≈ −100 ms. It is still outside the band at the end of the run ("still outside the band"), so its steady-state rows are *not* a steady state.*
 
-  ![pi_anti_windup, i_max 100 ppm](img/gui_antiwindup_en.png)
-  *`pi_anti_windup`, i_max 100 ppm: the offset dips 44.1 µs below zero (0.04 % of the step, shown as "0.0 %" in the table) and the transient ends at 115.5 s. The integrator stays within ±100 ppm, which is invisible on this scale: the plot is dominated by P, down to −70 000 ppm, with 403 clamped updates.*
+  ![pi_per_second, i_max 100 ppm](img/gui_antiwindup_en.png)
+  *`pi_per_second`, i_max 100 ppm: the offset dips 44.1 µs below zero (0.04 % of the step, shown as "0.0 %" in the table) and the transient ends at 115.5 s. The integrator stays within ±100 ppm, which is invisible on this scale: the plot is dominated by P, down to −70 000 ppm, with 403 clamped updates.*
 
 * **Asymmetry bias**: Network → Asymmetry 1000 ns: true offset steady-state median → −500 ns, estimated → 0.
 * **Rate granularity**: Actuator → NXP, 24 MHz, Frequency error 5 ppm: the true offset dithers by µs.

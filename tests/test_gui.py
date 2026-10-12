@@ -127,13 +127,10 @@ def test_firmware_servo_widgets_round_trip_and_write_the_config(win):
     assert c.firmware.cmd_clamp_ppm == 2000.0
 
 
-def test_anti_windup_controller_is_selectable(win):
+def test_per_second_controller_is_selectable(win):
     win._apply_cfg_to_widgets(SimConfig.load(CONFIGS[0]))
-    win.ctrl_combo.setCurrentText("pi_anti_windup")
-    c = win.build_config()
-    assert c.controller.name == "pi_anti_windup"
-    assert c.controller.params == {"kp": 0.7, "ki": 0.3, "i_max_ppm": 0.0}
     win.ctrl_combo.setCurrentText("pi_per_second")
+    assert win.build_config().controller.name == "pi_per_second"
     assert win.build_config().controller.params == {"kp": 0.7, "ki": 0.3, "i_max_ppm": 0.0, "t_ref_s": 1.0,
                                                     "dt_max_s": 10.0, "kp_dt_max": 1.0}
     win.ctrl_combo.setCurrentText("baseline_pi")
@@ -143,8 +140,8 @@ def test_pi_terms_plot_draws_the_terms_and_the_active_limits(win):
     from ptpsim.engine import simulate
     from ptpsim.live import pack_result
     cfg = SimConfig.load(CONFIGS[0]).with_overrides(**{
-        "duration_s": 20.0, "firmware.cmd_clamp_ppm": 1000.0, "controller.name": "pi_anti_windup",
-        "controller.params": {"kp": 0.7, "ki": 0.3, "i_max_ppm": 30.0}})
+        "duration_s": 20.0, "firmware.cmd_clamp_ppm": 1000.0, "controller.name": "pi_per_second",
+        "controller.params": {"kp": 0.7, "ki": 0.3, "i_max_ppm": 30.0, "t_ref_s": 0.25, "kp_dt_max": 0.0}})
     win.main_res = pack_result(simulate(cfg))
     win.chk_pi.setChecked(True)                       # toggling redraws
     x, y = win.cv["pi_i"].getData()

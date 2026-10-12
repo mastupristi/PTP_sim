@@ -48,7 +48,7 @@ at Sync 62.5 ms, 100 µs step: undershoot 22.9 µs against 64.6 µs.*
 |---|---|
 | `ptpsim/engine.py` | discrete-event engine: GM, network, slave firmware model, slave clock, results |
 | `ptpsim/fwport.py` | bit-faithful ports of the PI, ppb→scaled-ppm→ratio, NXP `find_correction`, ENET timer model |
-| `ptpsim/controllers.py` | controller interface, **baseline_pi** (firmware PI), **pi_time_aware** (variant), **pi_anti_windup** (firmware PI + integrator limit), **pi_per_second** (same, `ki` scaled by the Sync interval, `kp·dt` guard) |
+| `ptpsim/controllers.py` | controller interface, **baseline_pi** (firmware PI), **pi_time_aware** (variant), **pi_per_second** (firmware PI, `ki` scaled by the Sync interval, integrator limit = anti-windup, `kp·dt` guard) |
 | `ptpsim/actuators.py`, `clock.py` | ideal / NXP actuators; piecewise-linear slave clock |
 | `ptpsim/rng.py` | disturbance streams indexed by message sequence number (reproducible seeds) |
 | `ptpsim/metrics.py`, `export.py`, `compare.py`, `analysis.py`, `cli.py` | metrics, CSV/JSON export, comparison, analytic loop model, CLI |
@@ -142,7 +142,7 @@ Findings (model predictions, with the evidence in the tests/results):
    driver rejects it → `clock_servo_reset()` loop (the 100 ms outlier rule only applies after lock); beyond 1 s the
    forced alignment (`clock_step`) takes over. Clamping the command (experimental option) removes the reset loop but,
    with no anti-windup, the baseline integrator winds up: from 100 ms with a 1000 ppm clamp it reaches ≈ 6×10⁶ ppm and
-   the offset overshoots to ≈ −100 ms. `pi_anti_windup` (same law, integrator limited to ±`i_max_ppm`) at 100 ppm
+   the offset overshoots to ≈ −100 ms. `pi_per_second` with `t_ref_s` = the Sync interval (the firmware law, integrator limited to ±`i_max_ppm`) at 100 ppm
    settles with ≈ 44 µs of overshoot (scenario of `test_integrator_limit_bounds_the_windup_and_the_overshoot`,
    ideal actuator, 20 ppm oscillator error); the limit must stay above the steady frequency
    correction (oscillator error + drift), otherwise a residual offset `(error − i_max)/kp` remains.
@@ -222,7 +222,7 @@ RMS and bias on a configurable final window, saturation/reset counters, divergen
 | PR #121108 ztest cases (ATCOR = period−1, closer neighbour, sweeps) | ported in the same file | ✔ verified |
 | Closed loop = analytic recursion | exact-delay run vs recursion, < 1e-3 ns | ✔ verified |
 | Identical clocks, offset only, frequency error, phase continuity, t2/t3 before FUP/Resp, pairing, rate change between t2 and t3, ordering, asymmetry bias, saturation/anti-windup, interval changes, 1e6 s precision, jitter distribution/seeds | `tests/test_engine.py`, `tests/test_units.py` | ✔ verified |
-| Command clamp (off = firmware, NaN not clamped, exact at the actuator limit), step threshold, `pi_anti_windup` (0 = baseline bit-identical, windup bound, residual below the steady correction), `firmware.delay_rate_comp` (open-loop bias removed, Sync 2 s stable, off = bit-identical, overlay never uses it), `pi_per_second` (bit-identical at `dt = t_ref` for `kp ≤ kp_dt_max`, `ki/dt` constant, damping independent of the Sync interval, `kp·dt` guard), P/I recording, unmodified-firmware overlay | `tests/test_servo_options.py` | ✔ verified (model only) |
+| Command clamp (off = firmware, NaN not clamped, exact at the actuator limit), step threshold, integrator limit of `pi_per_second` (off at `dt = t_ref` = baseline bit-identical, windup bound, residual below the steady correction), `firmware.delay_rate_comp` (open-loop bias removed, Sync 2 s stable, off = bit-identical, overlay never uses it), `pi_per_second` (bit-identical at `dt = t_ref` for `kp ≤ kp_dt_max`, `ki/dt` constant, damping independent of the Sync interval, `kp·dt` guard), P/I recording, unmodified-firmware overlay | `tests/test_servo_options.py` | ✔ verified (model only) |
 | Baseline vs **hardware** | no real logs available | ✘ **not validated** |
 | Log importer / replay | needs the real instrumentation format (not in any branch) | ✘ not implemented |
 

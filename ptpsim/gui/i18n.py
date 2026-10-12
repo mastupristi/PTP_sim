@@ -100,9 +100,9 @@ STRINGS: dict[str, dict] = {
     "pd_sat_ppb": _s("command limit [ppb] (must stay below the actuator limit)",
                      "limite del comando [ppb] (deve restare sotto il limite dell'attuatore)"),
     "pd_wn_ts_max": _s("max wn·dt [rad] (stability guard, kp·dt < 2)", "max wn·dt [rad] (guardia di stabilità, kp·dt < 2)"),
-    "pd_i_max_ppm": _s("integrator limit [ppm] (0 = off, identical to baseline_pi); must exceed the steady frequency "
+    "pd_i_max_ppm": _s("integrator limit [ppm] (0 = off); must exceed the steady frequency "
                        "correction (oscillator error + drift)",
-                       "limite dell'integratore [ppm] (0 = off, identico a baseline_pi); deve superare la correzione di "
+                       "limite dell'integratore [ppm] (0 = off); deve superare la correzione di "
                        "frequenza a regime (errore oscillatore + deriva)"),
     "pd_t_ref_s": _s("interval [s] at which kp, ki are tuned; the integrator adds ki·dt/t_ref per update, so ki/t_ref [s⁻²] "
                      "does not depend on the Sync interval (kp is not scaled)",
@@ -362,18 +362,13 @@ STRINGS: dict[str, dict] = {
         "bandwidth guard wn·dt ≤ wn_ts_max, output clamp and anti-windup.",
         "PI sperimentale con tempo di campionamento esplicito: kp = 2ζ·wn, ki = wn² al secondo, dt misurato, "
         "guardia wn·dt ≤ wn_ts_max, limite sull'uscita e anti-windup."),
-    "cn_pi_anti_windup": _s(
-        "Firmware PI law (same per-update kp, ki, no dt) with the integrator clamped to ±i_max_ppm after each update: "
-        "bounds the windup while the command clamp saturates. i_max_ppm = 0: identical to baseline_pi.",
-        "Legge del PI firmware (stessi kp, ki per aggiornamento, senza dt) con l'integratore limitato a ±i_max_ppm dopo "
-        "ogni aggiornamento: limita il windup mentre il clamp del comando satura. i_max_ppm = 0: identico a baseline_pi."),
     "cn_pi_per_second": _s(
         "Firmware PI law with kp, ki tuned at t_ref (default 1 s): the integrator adds ki·dt/t_ref per update (dt measured "
         "from the GM timestamps), so the loop shape does not change with the Sync interval. kp is not scaled. "
-        "Integrator limit i_max_ppm as in pi_anti_windup. Guard: the applied kp is min(kp, kp_dt_max/dt). At dt = t_ref "
-        "(and kp ≤ kp_dt_max) identical to pi_anti_windup.",
+        "Integrator limit i_max_ppm (anti-windup, 0 = off): bounds the windup while the command clamp saturates. "
+        "Guard: the applied kp is min(kp, kp_dt_max/dt). At dt = t_ref (and kp ≤ kp_dt_max, i_max_ppm = 0) the firmware law.",
         "Legge del PI firmware con kp, ki tarati a t_ref (default 1 s): l'integratore somma ki·dt/t_ref a ogni aggiornamento "
         "(dt misurato dai timestamp del GM), quindi la forma dell'anello non cambia con l'intervallo Sync. kp non viene "
-        "scalato. Limite integratore i_max_ppm come in pi_anti_windup. Protezione: il kp applicato è min(kp, kp_dt_max/dt). "
-        "A dt = t_ref (e kp ≤ kp_dt_max) identico a pi_anti_windup."),
+        "scalato. Limite integratore i_max_ppm (anti-windup, 0 = off): limita il windup mentre il clamp del comando satura. "
+        "Protezione: il kp applicato è min(kp, kp_dt_max/dt). A dt = t_ref (e kp ≤ kp_dt_max, i_max_ppm = 0) la legge del firmware."),
 }

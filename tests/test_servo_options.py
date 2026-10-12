@@ -17,8 +17,12 @@ ACT_LIMIT_PPB = 50_000_000.0
 
 
 def _aw(cfg, i_max_ppm):
-    return cfg.with_overrides(**{"controller.name": "pi_anti_windup",
-                                 "controller.params": {"kp": 0.7, "ki": 0.3, "i_max_ppm": i_max_ppm}})
+    """Firmware law with an integrator limit: ``pi_per_second`` with ``t_ref_s`` = the Sync interval of ``cfg`` (so
+    ``ki_eff = ki``) and the ``kp * dt`` guard off."""
+    t_ref = 2.0 ** cfg.intervals.sync_log
+    return cfg.with_overrides(**{"controller.name": "pi_per_second",
+                                 "controller.params": {"kp": 0.7, "ki": 0.3, "i_max_ppm": i_max_ppm,
+                                                       "t_ref_s": t_ref, "kp_dt_max": 0.0}})
 
 
 # --------------------------------------------------------------------------- command clamp
@@ -84,9 +88,9 @@ def test_step_threshold_change_applies_live():
     assert sim.counters["steps"] == 1
 
 
-# --------------------------------------------------------------------------- anti-windup PI
+# --------------------------------------------------------------------------- integrator limit (anti-windup)
 
-def test_anti_windup_with_zero_limit_is_identical_to_the_baseline():
+def test_integrator_limit_off_at_the_reference_interval_is_identical_to_the_baseline():
     cfg = quiet_cfg(**{"oscillator.initial_offset_ns": 100e6, "oscillator.freq_error_ppb": 20_000.0,
                        "firmware.cmd_clamp_ppm": 1000.0})
     a, b = simulate(_aw(cfg, 0.0)), simulate(cfg)
@@ -175,10 +179,10 @@ def _ps(cfg, **params):
                                  "controller.params": {"kp": 0.7, "ki": 0.3, **params}})
 
 
-def test_per_second_pi_is_bit_identical_to_anti_windup_at_the_reference_interval():
+def test_per_second_pi_is_bit_identical_to_the_baseline_at_the_reference_interval():
     cfg = quiet_cfg(**{"intervals.sync_log": 0, "oscillator.initial_offset_ns": 100e3,
                        "oscillator.freq_error_ppb": 20_000.0, "duration_s": 60.0})
-    a, b = simulate(_ps(cfg, t_ref_s=1.0)), simulate(_aw(cfg, 0.0))
+    a, b = simulate(_ps(cfg, t_ref_s=1.0)), simulate(cfg)
     for name in ("servo_cmd_ppb", "servo_integral", "servo_p_ppb", "servo_offset_true_ns"):
         assert np.array_equal(getattr(a, name), getattr(b, name), equal_nan=True), name
 

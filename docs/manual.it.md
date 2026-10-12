@@ -98,7 +98,7 @@ clock (niente tick del timer NXP, niente jitter sull'uscita).
   del controllore** (P + I per le leggi PI, prima del clamp del comando); il **comando applicato** al clock (mantenuto, verde)
   mostra il clamp e il ritorno al nominale a ogni reset del servo. Step e outlier rifiutati non aggiornano, quindi nessun punto.
   Le righe orizzontali indicano i limiti attivi: attuatore ±50 000 ppm, clamp del comando, limite dell'integratore
-  (`pi_anti_windup`), limite del controllore (`sat_ppb` di `pi_time_aware`); non entrano nell'auto-range dell'asse y. Serve a
+  (`i_max_ppm` di `pi_per_second`), limite del controllore (`sat_ppb` di `pi_time_aware`); non entrano nell'auto-range dell'asse y. Serve a
   dimensionare un limite anti-windup: quanto cresce I mentre il comando è in clamp, e quale I a regime deve poter ancora tenere.
 * **Riga di fine transitorio** (verticale tratteggiata, con etichetta): istante in cui l'offset reale entra nella banda di
   assestamento e vi resta per il tempo di permanenza (§4). Nel grafico Offset la riga della baseline sovrapposta è rosa.
@@ -163,24 +163,25 @@ ultime due colonne — il comando accettato dal driver `cmd_applied_ppb` (dopo i
   * **wn_ts_max** [rad]: limita la banda a `wn·dt ≤ wn_ts_max` perché l'anello campionato resti stabile (`kp·dt < 2`).
   * **dt_max_s** [s]: l'intervallo misurato da `t1` consecutivi è limitato a questo valore assoluto (default 10 s; protezione
     contro i messaggi persi). Mantienilo ≥ all'intervallo Sync nominale.
-* `pi_per_second` — `pi_anti_windup` con il guadagno integrale scalato dall'intervallo Sync: `integrale += (ki·dt/t_ref)·e`.
+* `pi_per_second` — la legge del PI firmware con il guadagno integrale scalato dall'intervallo Sync, `integrale += (ki·dt/t_ref)·e`,
+  e un limite dell'integratore: `integrale = clamp(integrale, ±i_max); u = kp·e + integrale`.
   Serve quando cambi l'intervallo Sync e vuoi che la forma dell'anello resti la stessa: **kp** e **ki** sono i guadagni
   tarati a **t_ref**, e `ki/t_ref` [s⁻²] resta costante (**kp** non viene scalato: ppb/ns è già 1/s).
   * **t_ref_s** [s]: intervallo a cui sono tarati kp, ki (default 1 s, l'intervallo per cui sono tarati i guadagni del firmware).
-    A `dt = t_ref_s` (e `kp ≤ kp_dt_max`) la legge è identica a `pi_anti_windup`; a 250 ms l'integratore somma ki/4 a ogni aggiornamento.
+    A `dt = t_ref_s` (e `kp ≤ kp_dt_max`) la legge è quella del firmware (con `i_max_ppm = 0`); a 250 ms l'integratore somma ki/4 a ogni aggiornamento.
   * **dt_max_s** [s]: l'intervallo misurato (da `t1` consecutivi, quindi un Sync perso dà un passo più lungo) è limitato a
     questo valore assoluto (default 10 s). Mantienilo ≥ all'intervallo Sync nominale, altrimenti vengono limitati anche i
-    passi regolari. **i_max_ppm** come in `pi_anti_windup`.
+    passi regolari.
+  * **i_max_ppm** [ppm]: limite dell'integratore (anti-windup); **0 = off**. Limita il windup mentre il clamp del comando
+    satura. Deve restare **sopra la correzione di frequenza a regime** (errore dell'oscillatore + deriva): con 20 ppm di
+    errore dell'oscillatore e i_max = 10 ppm, P deve fornire gli altri 10 ppm e l'offset si assesta a 10 ppm / kp ≈ 14.3 µs
+    invece che a 0.
+    Per riprodurre `baseline_pi` (più il limite) a un dato intervallo Sync imposta **t_ref_s** a quell'intervallo e
+    **kp_dt_max** a 0; in una simulazione il `dt` misurato contiene il jitter del Sync, quindi la coincidenza è esatta solo senza jitter.
   * **kp_dt_max** [adimensionale]: protezione sul passo proporzionale: il guadagno applicato è `kp_eff = min(kp, kp_dt_max/dt)`
-    (default 1; 0 = off). Con `kp·dt ≤ kp_dt_max` non cambia nulla (per esempio l'identità con `pi_anti_windup` a 1 s vale
+    (default 1; 0 = off). Con `kp·dt ≤ kp_dt_max` non cambia nulla (per esempio l'identità con la legge del firmware a 1 s vale
     per `kp ≤ 1`); un `kp` più alto viene limitato agli intervalli lunghi. È necessaria, non sufficiente: un **ki** alto o
     Sync = 2 s possono ancora oscillare o divergere (vedi `docs/model.md`).
-* `pi_anti_windup` — la legge del PI firmware (stessi **kp**, **ki** per aggiornamento, senza dt) con un limite dell'integratore:
-  `integrale += ki·e; integrale = clamp(integrale, ±i_max); u = kp·e + integrale`.
-  * **i_max_ppm** [ppm]: limite dell'integratore; **0 = off**, e il controllore è allora identico a `baseline_pi`.
-    Limita il windup mentre il clamp del comando satura. Deve restare **sopra la correzione di frequenza a regime**
-    (errore dell'oscillatore + deriva): con 20 ppm di errore dell'oscillatore e i_max = 10 ppm, P deve fornire gli altri
-    10 ppm e l'offset si assesta a 10 ppm / kp ≈ 14.3 µs invece che a 0.
 
 **Servo del firmware (clock.c)** — opzioni del servo attorno al controllore (valgono per ogni controllore):
 * **Clamp del comando** (`firmware.cmd_clamp_ppm`, default 0 = off) — **non presente nel firmware**: il comando viene saturato a
@@ -304,15 +305,15 @@ Tutte le metriche usano i dati a piena risoluzione. Per l'offset reale e per que
   *`configs/noisy_seed1.json` (300 s, 20 ppm, 100 µs, Sync 250 ms, seed 1) con `pi_time_aware` contro la baseline. Offset reale: il transitorio finisce a 9,61 s contro 14,33 s, sovraelongazione 12,0 % (19,2 µs) contro 43,2 % (69,1 µs), RMS a regime 189,6 ns contro 185,2 ns: circa uguale, perché lo fissa il jitter. La "fine transitorio" dell'offset *stimato* (284,75 s) è un artefatto del rumore: la sua dispersione è dell'ordine della banda di 1 µs. Un solo seed e una sola banda: la tabella del README ha 10 seed.*
 * **Dimensionare l'anti-windup**: Scenario → Offset iniziale 100 ms; Controllore → Clamp del comando 1000 ppm; spunta *Termini PI*.
   Con `baseline_pi` l'integratore va in windup fino a ≈ 6×10⁶ ppm e l'offset sovraelonga fino a ≈ −100 ms; scegli
-  `pi_anti_windup` e alza **i_max_ppm** partendo da poco sopra l'errore dell'oscillatore (qui 20 ppm): a 100 ppm la
+  `pi_per_second` (con **t_ref_s** = intervallo Sync, 0,25 s, e **kp_dt_max** = 0, cioè la legge del firmware) e alza **i_max_ppm** partendo da poco sopra l'errore dell'oscillatore (qui 20 ppm): a 100 ppm la
   sovraelongazione è ≈ 44 µs.
-  Le due simulazioni (`baseline_pi` poi `pi_anti_windup`, i_max 100 ppm; 300 s, 20 ppm, 100 ms, clamp 1000 ppm, unità ms):
+  Le due simulazioni (`baseline_pi` poi `pi_per_second`, i_max 100 ppm, t_ref 0,25 s, kp_dt_max 0; 300 s, 20 ppm, 100 ms, clamp 1000 ppm, unità ms):
 
   ![baseline_pi in windup](img/gui_windup_it.png)
   *`baseline_pi`: l'integratore I arriva a ≈ −6×10⁶ ppm mentre il comando è in clamp (1188 aggiornamenti in clamp) e l'offset oltrepassa fino a ≈ −100 ms. A fine simulazione è ancora fuori banda ("ancora fuori banda"), quindi le righe di regime *non* rappresentano un regime.*
 
-  ![pi_anti_windup, i_max 100 ppm](img/gui_antiwindup_it.png)
-  *`pi_anti_windup`, i_max 100 ppm: l'offset scende di 44,1 µs sotto zero (0,04 % del gradino, mostrato come "0,0 %" nella tabella) e il transitorio finisce a 115,5 s. L'integratore resta entro ±100 ppm, invisibile a questa scala: il grafico è dominato da P, fino a −70 000 ppm, con 403 aggiornamenti in clamp.*
+  ![pi_per_second, i_max 100 ppm](img/gui_antiwindup_it.png)
+  *`pi_per_second`, i_max 100 ppm: l'offset scende di 44,1 µs sotto zero (0,04 % del gradino, mostrato come "0,0 %" nella tabella) e il transitorio finisce a 115,5 s. L'integratore resta entro ±100 ppm, invisibile a questa scala: il grafico è dominato da P, fino a −70 000 ppm, con 403 aggiornamenti in clamp.*
 
 * **Bias da asimmetria**: Rete → Asimmetria 1000 ns: la mediana a regime dell'offset reale → −500 ns, dello stimato → 0.
 * **Granularità del rate**: Attuatore → NXP, 24 MHz, Errore di frequenza 5 ppm: l'offset reale oscilla di µs.

@@ -12,7 +12,7 @@ firmware, not the controller, that decides when a reset happens.
 Gain-change policy (live mode): ``set_params(params, policy)`` with policy
 ``keep`` (integrator state untouched - the default), ``reset`` (integrator zeroed) or
 ``bumpless`` (integrator recomputed so that the *last output* is unchanged).  Nothing is reset
-implicitly.  (For ``pi_anti_windup`` a carried-over integral above ``i_max_ppm`` is clamped at the
+implicitly.  (For ``pi_per_second`` a carried-over integral above ``i_max_ppm`` is clamped at the
 next update, not at the change.)
 """
 from __future__ import annotations
@@ -210,46 +210,23 @@ class PITimeAware(Controller):
         return self.kp * error
 
 
-class PIAntiWindup(BaselinePI):
-    """Firmware PI law with an integrator limit (anti-windup by integral clamping).
-
-    ``integral += ki * e;  integral = clamp(integral, +-i_max);  ppb = kp * e + integral``,
-    with the same per-sample kp, ki, sign and absolute output as ``baseline_pi`` (no dt).
-
-    Why: with the firmware command clamp (``firmware.cmd_clamp_ppm``) the output saturates while the
-    baseline integrator keeps accumulating the error (windup), so the release overshoots.  Limiting
-    the integral bounds that stored correction.  The limit must stay above the steady frequency
-    correction the loop needs (oscillator error + drift): below it the offset cannot reach zero.
-    ``i_max_ppm = 0`` disables the limit and the controller is then identical to ``baseline_pi``.
-    """
-    name = "pi_anti_windup"
-    PARAMS = {**BaselinePI.PARAMS,
-              "i_max_ppm": (0.0, 0.0, 50_000.0, "integrator limit [ppm] (0 = off, identical to baseline_pi)")}
-
-    def update(self, s: ServoSample) -> float:
-        e = -float(s.offset_ns)
-        pi = self._pi
-        pi.integral += pi.ki * e
-        limit_ppb = self.params["i_max_ppm"] * 1000.0
-        if limit_ppb > 0.0 and abs(pi.integral) > limit_ppb:
-            pi.integral = math.copysign(limit_ppb, pi.integral)
-        out = pi.kp * e + pi.integral
-        self.last_error, self.last_output = e, out
-        return out
-
-
-class PIPerSecond(PIAntiWindup):
-    """Firmware PI law with the integral gain scaled by the measured Sync interval.
+class PIPerSecond(BaselinePI):
+    """Firmware PI law with the integral gain scaled by the measured Sync interval and an integrator limit.
 
     ``ki_eff = ki * dt / t_ref_s``;  ``integral += ki_eff * e;  integral = clamp(integral, +-i_max);
     ppb = kp * e + integral``  (``e = -offset_ns``, absolute output in ppb, same sign and clamp as the firmware).
+    The integrator limit is the anti-windup: with the firmware command clamp (``firmware.cmd_clamp_ppm``) the output
+    saturates while the baseline integrator keeps accumulating the error (windup), so the release overshoots.  The
+    limit must stay above the steady frequency correction the loop needs (oscillator error + drift): below it the
+    offset cannot reach zero.  ``i_max_ppm = 0`` disables the limit.
 
     Why: the firmware ``ki`` acts per update, so the continuous-time integral gain is ``ki / T_sync`` and the
     damping changes with the Sync interval (0.64 at 1 s, 0.32 at 0.25 s for 0.7 / 0.3).  Here ``kp`` and
     ``ki`` are the gains *tuned at* ``t_ref_s``: ``ki / t_ref_s`` [s^-2] is held constant, so the integrator
     adds ``ki * dt / t_ref_s`` per update and the loop shape no longer depends on the interval.
     ``kp`` is **not** scaled: ppb/ns is already 1/s, a continuous gain.  Default ``t_ref_s = 1`` (the interval the
-    firmware gains are tuned for, Kconfig help); at ``dt == t_ref_s`` (and ``kp <= kp_dt_max``) the law is bit-identical to ``pi_anti_windup``.
+    firmware gains are tuned for, Kconfig help); at ``dt == t_ref_s`` (and ``kp <= kp_dt_max``, ``i_max_ppm = 0``) the law is the firmware one (``baseline_pi``).
+    Not bit-identical in a run: the measured ``dt`` carries the Sync jitter, and a lost Sync doubles it.
 
     ``dt`` is the interval measured from the GM timestamps (t1 differences), so a lost Sync gives a longer
     step; it is clamped to the absolute ``dt_max_s`` (the first sample after a long gap can be arbitrarily old).
@@ -258,12 +235,13 @@ class PIPerSecond(PIAntiWindup):
     Guard on ``kp * dt``: the proportional step per update is ``kp * dt``, and the discrete loop cannot be
     stable beyond ``kp * dt = 2`` (no-lag model).  The gain actually applied is ``kp_eff = min(kp, kp_dt_max / dt)``
     (``kp_dt_max = 0``: guard off).  The default 1.0 leaves ``kp * dt <= 1`` untouched (so at ``dt == t_ref_s`` it
-    is bit-identical to ``pi_anti_windup`` for ``kp <= 1``) and caps a larger ``kp`` at long intervals.  It is a
+    is the firmware law for ``kp <= 1``) and caps a larger ``kp`` at long intervals.  It is a
     necessary condition only: the integral gain and the delay-estimate feedback also limit stability (see
     docs/model.md), so it does not make every ``kp, ki, dt`` combination stable.
     """
     name = "pi_per_second"
-    PARAMS = {**PIAntiWindup.PARAMS,
+    PARAMS = {**BaselinePI.PARAMS,
+              "i_max_ppm": (0.0, 0.0, 50_000.0, "integrator limit [ppm] (0 = off)"),
               "t_ref_s": (1.0, 0.01, 10.0, "interval at which kp, ki are tuned [s]; ki acts as ki*dt/t_ref_s"),
               "dt_max_s": (10.0, 0.01, 100.0, "measured dt is clamped to this value [s] (>= nominal Sync interval)"),
               "kp_dt_max": (1.0, 0.0, 10.0, "guard: kp_eff = min(kp, kp_dt_max / dt); 0 = off")}
@@ -308,7 +286,7 @@ class PIPerSecond(PIAntiWindup):
         return out
 
 
-REGISTRY: dict[str, type[Controller]] = {c.name: c for c in (BaselinePI, PITimeAware, PIAntiWindup, PIPerSecond)}
+REGISTRY: dict[str, type[Controller]] = {c.name: c for c in (BaselinePI, PITimeAware, PIPerSecond)}
 
 
 def make_controller(name: str, params: dict[str, float] | None = None) -> Controller:

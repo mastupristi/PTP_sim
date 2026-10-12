@@ -93,21 +93,21 @@ residual at 24 MHz.
 
 ## 6. Controllers (`ptpsim/controllers.py`)
 
-| | `baseline_pi` (firmware) | `pi_time_aware` (experimental) | `pi_anti_windup` (experimental) |
+| | `baseline_pi` (firmware) | `pi_time_aware` (experimental) | `pi_per_second` (experimental) |
 |---|---|---|---|
-| law | `I += ki·e; u = kp·e + I` | `u = kp·e + I; I += ki·dt·e` (conditional integration) | `I += ki·e; I = clamp(I, ±i_max); u = kp·e + I` |
+| law | `I += ki·e; u = kp·e + I` | `u = kp·e + I; I += ki·dt·e` (conditional integration) | `I += ki·dt/t_ref·e; I = clamp(I, ±i_max); u = kp·e + I` |
 | `e` | −offset [ns] | −offset [ns] | −offset [ns] |
-| parameters | `kp` [ppb/ns], `ki` [ppb/ns per update] | `wn` [rad/s], `zeta`; `kp = 2ζ·wn` [s⁻¹], `ki = wn²` [s⁻²] | as baseline + `i_max_ppm` [ppm] (0 = off) |
-| dt | none | measured from consecutive `t1` (GM timestamps), clamped to `dt_max_s` | none |
+| parameters | `kp` [ppb/ns], `ki` [ppb/ns per update] | `wn` [rad/s], `zeta`; `kp = 2ζ·wn` [s⁻¹], `ki = wn²` [s⁻²] | as baseline (at `t_ref_s`) + `i_max_ppm` [ppm] (0 = off), `t_ref_s`, `dt_max_s`, `kp_dt_max` |
+| dt | none | measured from consecutive `t1` (GM timestamps), clamped to `dt_max_s` | measured from consecutive `t1`, clamped to `dt_max_s`; scales `ki` only |
 | stability | none (Kconfig: tuned for ~1 s) | `wn·dt ≤ wn_ts_max` (0.35 rad): `kp·dt < 2` | `kp_eff = min(kp, kp_dt_max/dt)` (`kp·dt ≤ 1` by default) |
 | saturation | none: driver rejects → `clock_servo_reset` | clamp ±`sat_ppb` (400 000 ppb) + anti-windup | integrator only (output limited by the servo's command clamp, if on) |
 | output | absolute ppb | absolute ppb | absolute ppb |
 
-`pi_per_second` (experimental) is `pi_anti_windup` with `ki_eff = ki·dt/t_ref_s` (`dt` measured from consecutive `t1`,
+`pi_per_second` has `ki_eff = ki·dt/t_ref_s` (`dt` measured from consecutive `t1`,
 clamped to the absolute `dt_max_s` (10 s); `t_ref_s = 1 s` by default, the interval the firmware gains are tuned for). `kp` is
 not scaled: ppb/ns is already s⁻¹. `ki/t_ref_s` [s⁻²] is thus constant and the continuous damping
 `ζ = kp / (2·sqrt(ki/t_ref_s))` = 0.64 for any Sync interval, whereas in the baseline it is `0.7 / (2·sqrt(0.3/T))`:
-0.64 at 1 s, 0.32 at 250 ms, 0.16 at 62.5 ms. At `dt = t_ref_s` (and `kp ≤ kp_dt_max`) it is bit-identical to `pi_anti_windup`. Measured
+0.64 at 1 s, 0.32 at 250 ms, 0.16 at 62.5 ms. At `dt = t_ref_s` (and `kp ≤ kp_dt_max`, `i_max_ppm = 0`) it is the firmware law, bit-identical to `baseline_pi` when the measured `dt` equals `t_ref_s` exactly (no Sync jitter, no lost Sync; with jitter `dt` varies and so does `ki_eff`). Measured
 (quiet scenario, 100 µs step, 0 ppm, 0.7 / 0.3, minimum of the true offset after the step; `tests/test_servo_options.py`
 repeats the check): baseline −64.6 µs (62.5 ms), −55.6 (125 ms), −45.9 (250 ms), −35.0 (500 ms), −30.0 (1 s);
 `pi_per_second` −22.9, −22.3, −22.9, −21.1, −30.0 µs. 
@@ -170,8 +170,8 @@ loop is stable but poorly damped (87-108 % overshoot quiet), and in the noisy ru
 ±2 µs are noise-limited, not diverging: over 1200 s the RMS stays at 450-960 ns in every 300 s window (peaks 2-6 µs)
 with no trend and no resets.
 
-All feed the same firmware servo state machine (lock, outlier rejection, step, reset). With `i_max_ppm = 0`
-`pi_anti_windup` is bit-identical to `baseline_pi`; `i_max` must exceed the steady frequency correction, otherwise
+All feed the same firmware servo state machine (lock, outlier rejection, step, reset). The integrator limit
+`i_max_ppm` of `pi_per_second` (0 = off) must exceed the steady frequency correction, otherwise
 the offset settles at `(correction − i_max)/kp`.
 
 **Experimental servo options** (`FirmwareConfig`, applied around any controller):

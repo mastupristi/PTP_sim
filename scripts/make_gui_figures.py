@@ -40,8 +40,9 @@ SCENES = {
                         "controller.params": {"kp": 0.7, "ki": 0.3}}, pi_terms=True, units="ms", size=(1500, 1050)),
     "antiwindup": dict(cfg={"duration_s": 300.0, "oscillator.initial_offset_ns": 100e6,
                             "oscillator.freq_error_ppb": 20000.0, "firmware.cmd_clamp_ppm": 1000.0,
-                            "controller.name": "pi_anti_windup",
-                            "controller.params": {"kp": 0.7, "ki": 0.3, "i_max_ppm": 100.0}}, pi_terms=True, units="ms",
+                            "controller.name": "pi_per_second",
+                            "controller.params": {"kp": 0.7, "ki": 0.3, "i_max_ppm": 100.0, "t_ref_s": 0.25,
+                                                  "kp_dt_max": 0.0}}, pi_terms=True, units="ms",
                        size=(1500, 1050)),
     # Zoom checkboxes: x is shared by all plots, y is zoomed only in the plot under the cursor (and only if its box is checked)
     "zoom": dict(cfg={"duration_s": 90.0, "intervals.sync_log": -4, "oscillator.initial_offset_ns": 100e3,

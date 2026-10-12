@@ -143,7 +143,7 @@ return pi->kp * error + pi->integral;
 * Failure of the conversion or of `adjust_rate` (e.g. the NXP driver rejects `|ratio-1| > 50000 ppm`,
   `CONFIG_PTP_CLOCK_NXP_ENET_MAX_RATIO_PPM`) → `clock_servo_reset()`: integrator = 0, rate back to
   `ratio = 1.0` (`adjust_rate(0)`), lock cleared. There is no clamp/saturation and no anti-windup.
-  (The simulator's `firmware.cmd_clamp_ppm` and the `pi_anti_windup` controller are experiments, not firmware
+  (The simulator's `firmware.cmd_clamp_ppm` and the integrator limit of `pi_per_second` are experiments, not firmware
   behaviour; both are off/absent in the baseline.)
 * Sign: `offset > 0` (slave ahead) → `error < 0` → `ratio < 1` → fewer ns per tick → slave slows.
   Negative feedback, verified against the NXP driver (average tick = nominal·ratio).
