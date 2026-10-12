@@ -58,6 +58,8 @@ def interval_text(n: int) -> str:
     return f"2^{n} s = {s:g} s ({1 / s:g} Hz)"
 
 
+LOG_SLIDER_PARAMS = {"e_lo_ns", "e_hi_ns"}          # controller parameters spanning many decades: logarithmic slider
+
 class ResultReader(QtCore.QThread):
     """Moves worker replies from the multiprocessing queue to the GUI thread (signal)."""
     received = QtCore.Signal(object)
@@ -742,7 +744,7 @@ class MainWindow(QtWidgets.QMainWindow):
             val = params.get(k, dflt)
             tip = T("pd_" + k) if ("pd_" + k) in STRINGS else desc
             row = ParamRow(k, [f"controller.params.{k}"], lo, hi, val, (hi - lo) / 200.0 if hi < 100 else 1.0,
-                           decimals=3 if hi <= 20 else 1, tooltip=tip)
+                           decimals=3 if hi <= 20 else 1, tooltip=tip, log=k in LOG_SLIDER_PARAMS)
             row.name = "ctrl." + k
             row.add_to(self.ctrl_grid, i)
             row.changed.connect(self._on_param_changed)

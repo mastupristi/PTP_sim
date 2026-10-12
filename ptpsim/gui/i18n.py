@@ -100,6 +100,16 @@ STRINGS: dict[str, dict] = {
     "pd_sat_ppb": _s("command limit [ppb] (must stay below the actuator limit)",
                      "limite del comando [ppb] (deve restare sotto il limite dell'attuatore)"),
     "pd_wn_ts_max": _s("max wn·dt [rad] (stability guard, kp·dt < 2)", "max wn·dt [rad] (guardia di stabilità, kp·dt < 2)"),
+    "pd_wn_min": _s("natural frequency [rad/s] when the error is small (≤ e_lo): slow and quiet",
+                    "frequenza naturale [rad/s] quando l'errore è piccolo (≤ e_lo): lenta e silenziosa"),
+    "pd_wn_max": _s("natural frequency [rad/s] when the error is large (≥ e_hi): fast; still capped by wn_ts_max/dt",
+                    "frequenza naturale [rad/s] quando l'errore è grande (≥ e_hi): veloce; comunque limitata da wn_ts_max/dt"),
+    "pd_e_lo_ns": _s("scheduling variable [ns] at/below which wn = wn_min", "variabile di scheduling [ns] sotto cui wn = wn_min"),
+    "pd_e_hi_ns": _s("scheduling variable [ns] at/above which wn = wn_max (geometric interpolation in between)",
+                     "variabile di scheduling [ns] sopra cui wn = wn_max (interpolazione geometrica fra le due)"),
+    "pd_tau_release_s": _s("time constant [s] of the slow release of the scheduling variable (it rises at once, falls slowly); "
+                           "0 = no filter", "costante di tempo [s] del rilascio lento della variabile di scheduling (sale "
+                           "subito, scende lentamente); 0 = nessun filtro"),
     "pd_i_max_ppm": _s("integrator limit [ppm] (0 = off); must exceed the steady frequency "
                        "correction (oscillator error + drift)",
                        "limite dell'integratore [ppm] (0 = off); deve superare la correzione di "
@@ -371,6 +381,16 @@ STRINGS: dict[str, dict] = {
         "bandwidth guard wn·dt ≤ wn_ts_max, output clamp and anti-windup.",
         "PI sperimentale con tempo di campionamento esplicito: kp = 2ζ·wn, ki = wn² al secondo, dt misurato, "
         "guardia wn·dt ≤ wn_ts_max, limite sull'uscita e anti-windup."),
+    "cn_pi_gain_scheduled": _s(
+        "Experimental PI like pi_time_aware (kp = 2ζ·wn, ki = wn², measured dt, clamp, anti-windup) whose bandwidth wn "
+        "grows with the size of the offset: wn_min below e_lo, wn_max above e_hi, geometric in between. The scheduling "
+        "variable is the median of the last 3 |offset| with a slow release (tau_release_s): fast while the error is large, "
+        "slow and quiet once it is small. Slower tracking of an oscillator drift (offset ≈ drift rate / wn_min²).",
+        "PI sperimentale come pi_time_aware (kp = 2ζ·wn, ki = wn², dt misurato, clamp, anti-windup) la cui banda wn "
+        "cresce con la grandezza dell'offset: wn_min sotto e_lo, wn_max sopra e_hi, geometrica fra i due. La variabile di "
+        "scheduling è la mediana degli ultimi 3 |offset| con rilascio lento (tau_release_s): veloce finché l'errore è "
+        "grande, lenta e silenziosa quando è piccolo. Segue più lentamente una deriva dell'oscillatore (offset ≈ "
+        "velocità di deriva / wn_min²)."),
     "cn_pi_per_second": _s(
         "Firmware PI law with kp, ki tuned at t_ref (default 1 s): the integrator adds ki·dt/t_ref per update (dt measured "
         "from the GM timestamps), so the loop shape does not change with the Sync interval. kp is not scaled. "

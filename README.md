@@ -27,7 +27,7 @@ ptpsim-gui [scenario.json] [--lang en|it]   # interactive GUI (English default, 
 ptpsim-run run --config configs/default_deterministic.json --out results/run   # headless + CSV
 ptpsim-run run --preset noisy --set intervals.sync_log=-3 --set seed=5 --out results/run_noisy
 ptpsim-run compare --out results      # baseline vs variant, writes results/comparison.{csv,md}
-pytest                                # 172 tests (the C-reference tests need gcc, the GUI tests Qt)
+pytest                                # 180 tests (the C-reference tests need gcc, the GUI tests Qt)
 python bench/benchmark.py             # engine benchmark   (bench/gui_latency.py: GUI reactivity)
 ```
 
@@ -48,7 +48,7 @@ at Sync 62.5 ms, 100 µs step: undershoot 22.9 µs against 64.6 µs.*
 |---|---|
 | `ptpsim/engine.py` | discrete-event engine: GM, network, slave firmware model, slave clock, results |
 | `ptpsim/fwport.py` | bit-faithful ports of the PI, ppb→scaled-ppm→ratio, NXP `find_correction`, ENET timer model |
-| `ptpsim/controllers.py` | controller interface, **baseline_pi** (firmware PI), **pi_time_aware** (variant), **pi_per_second** (firmware PI, `ki` scaled by the Sync interval, integrator limit = anti-windup, `kp·dt` guard) |
+| `ptpsim/controllers.py` | controller interface, **baseline_pi** (firmware PI), **pi_time_aware** (variant), **pi_gain_scheduled** (variant, bandwidth grows with the offset), **pi_per_second** (firmware PI, `ki` scaled by the Sync interval, integrator limit = anti-windup, `kp·dt` guard) |
 | `ptpsim/actuators.py`, `clock.py` | ideal / NXP actuators; piecewise-linear slave clock |
 | `ptpsim/rng.py` | disturbance streams indexed by message sequence number (reproducible seeds) |
 | `ptpsim/metrics.py`, `export.py`, `compare.py`, `analysis.py`, `cli.py` | metrics, CSV/JSON export, comparison, analytic loop model, CLI |
@@ -56,7 +56,7 @@ at Sync 62.5 ms, 100 µs step: undershoot 22.9 µs against 64.6 µs.*
 | `ptpsim/scope.py` | headless oscilloscope model: edges of the slave square wave from the exact clock breakpoints |
 | `tests/` | unit/integration tests; `tests/c_ref/` vendored Zephyr C sources compiled by the tests |
 | `configs/` | scenario files (`scripts/make_configs.py`); `results/` committed baseline-vs-variant results |
-| `bench/` | benchmarks and their recorded results |
+| `bench/` | benchmarks and their recorded results; `gain_scheduled.py` compares `pi_gain_scheduled` with the others |
 | `docs/firmware_reconstruction.md` | **phase 1**: verified reconstruction of the firmware loop, with file/function/commit |
 | `docs/model.md` | model, jitter analysis, approximations, NXP table, validation matrix |
 | `docs/manual.en.md`, `docs/manual.it.md` | **user manual** (English / Italiano): every GUI parameter, its unit, what it does, metrics, JSON reference |
@@ -223,6 +223,7 @@ RMS and bias on a configurable final window, saturation/reset counters, divergen
 | Closed loop = analytic recursion | exact-delay run vs recursion, < 1e-3 ns | ✔ verified |
 | Identical clocks, offset only, frequency error, phase continuity, t2/t3 before FUP/Resp, pairing, rate change between t2 and t3, ordering, asymmetry bias, saturation/anti-windup, interval changes, 1e6 s precision, jitter distribution/seeds | `tests/test_engine.py`, `tests/test_units.py` | ✔ verified |
 | Command clamp (off = firmware, NaN not clamped, exact at the actuator limit), step threshold, integrator limit of `pi_per_second` (off at `dt = t_ref` = baseline bit-identical, windup bound, residual below the steady correction), `firmware.delay_rate_comp` (open-loop bias removed, Sync 2 s stable, off = bit-identical, overlay never uses it), `pi_per_second` (bit-identical at `dt = t_ref` for `kp ≤ kp_dt_max`, `ki/dt` constant, damping independent of the Sync interval, `kp·dt` guard), P/I recording, unmodified-firmware overlay | `tests/test_servo_options.py` | ✔ verified (model only) |
+| `pi_gain_scheduled` (geometric schedule, median-of-3 outlier rejection, slow release, equal to `pi_time_aware` at constant bandwidth, stability guard, reset, lower RMS on the noisy scenario) | `tests/test_gain_scheduled.py` | ✔ verified (model only) |
 | Baseline vs **hardware** | no real logs available | ✘ **not validated** |
 | Log importer / replay | needs the real instrumentation format (not in any branch) | ✘ not implemented |
 

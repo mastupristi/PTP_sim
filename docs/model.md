@@ -170,6 +170,44 @@ loop is stable but poorly damped (87-108 % overshoot quiet), and in the noisy ru
 ±2 µs are noise-limited, not diverging: over 1200 s the RMS stays at 450-960 ns in every 300 s window (peaks 2-6 µs)
 with no trend and no resets.
 
+`pi_gain_scheduled` (experimental) is `pi_time_aware` with a bandwidth that depends on the size of the offset, `wn(s) = wn_min·(wn_max/wn_min)^x`
+with `x = clip(ln(s/e_lo)/ln(e_hi/e_lo), 0, 1)` (defaults 0.2 → 1.2 rad/s between 1 µs and 100 µs), `kp = 2ζ·wn`, `ki = wn²`, `I += ki·dt·e`, clamp and
+conditional integration as in `pi_time_aware`, and `wn ≤ wn_ts_max/dt`. The scheduling variable `s` is the median of the last three `|e|` (one noisy sample
+cannot speed the loop up) with a slow release (`tau_release_s`, 4 s: it rises at once and falls exponentially), so the gain does not chatter around a steady
+state set by the jitter. `I` is stored in ppb, so a change of `ki` does not move the command (bumpless by construction). Gain scheduling has no general
+stability guarantee: it relies on `s` varying slowly against the loop. The slow bandwidth at small error tracks a drift of the oscillator frequency
+more slowly (for a frequency ramp the offset settles at ramp rate / `wn_min²`); and at Sync 1 s the guard `wn_ts_max/dt = 0.35` dominates, so it behaves like
+`pi_time_aware` in the transient. Measured with `bench/gain_scheduled.py` (300 s, 100 µs / 20 ppm unless stated, band 1 µs deterministic and 2 µs noisy, noisy rows = mean of
+seeds 1-5, RMS over the last 60 s; one run per row, no confidence intervals):
+
+| scenario | controller | settling [s] | overshoot [µs] | RMS final [ns] |
+|---|---|---|---|---|
+| 100 µs, Sync 250 ms | `baseline_pi` | 14.58 | 69.1 | 0.7 |
+| 100 µs, Sync 250 ms | `pi_time_aware` | 9.60 | 19.2 | 0.6 |
+| 100 µs, Sync 250 ms | `pi_gain_scheduled` | 7.52 | 6.1 | 0.2 |
+| 20 µs, Sync 250 ms | `baseline_pi` | 12.16 | 32.3 | 0.7 |
+| 20 µs, Sync 250 ms | `pi_time_aware` | 8.07 | 7.3 | 0.6 |
+| 20 µs, Sync 250 ms | `pi_gain_scheduled` | 10.30 | 8.4 | 0.2 |
+| 100 µs, Sync 1 s | `baseline_pi` | 13.72 | 39.1 | 0.6 |
+| 100 µs, Sync 1 s | `pi_time_aware` | 19.50 | 6.7 | 0.5 |
+| 100 µs, Sync 1 s | `pi_gain_scheduled` | 19.50 | 6.7 | 0.4 |
+| 100 µs, Sync 62.5 ms | `baseline_pi` | 17.25 | 100.3 | 0.6 |
+| 100 µs, Sync 62.5 ms | `pi_time_aware` | 9.52 | 16.9 | 0.5 |
+| 100 µs, Sync 62.5 ms | `pi_gain_scheduled` | 9.84 | 17.8 | 0.5 |
+| 100 µs, noisy, Sync 250 ms | `baseline_pi` | 11.64 | 64.8 | 223.9 |
+| 100 µs, noisy, Sync 250 ms | `pi_time_aware` | 7.78 | 14.9 | 212.2 |
+| 100 µs, noisy, Sync 250 ms | `pi_gain_scheduled` | 6.78 | 10.5 | 100.0 |
+| 100 µs, noisy, Sync 1 s | `baseline_pi` | 12.20 | 34.4 | 227.9 |
+| 100 µs, noisy, Sync 1 s | `pi_time_aware` | 15.30 | 5.9 | 185.9 |
+| 100 µs, noisy, Sync 1 s | `pi_gain_scheduled` | 15.30 | 5.9 | 119.5 |
+| 100 µs, noisy, Sync 62.5 ms | `baseline_pi` | 14.07 | 94.2 | 224.2 |
+| 100 µs, noisy, Sync 62.5 ms | `pi_time_aware` | 8.03 | 15.4 | 148.8 |
+| 100 µs, noisy, Sync 62.5 ms | `pi_gain_scheduled` | 8.03 | 15.7 | 81.0 |
+
+Reading: with noise the RMS at steady state is 40-50 % lower than `pi_time_aware` (100 vs 212 ns at 250 ms) with a faster or equal transient; with a small initial offset (20 µs) the transient is *slower*
+(10.3 s vs 8.1 s) because the bandwidth is already low when the error is small. At Sync 1 s there is no difference in the transient. The defaults are not tuned for a drifting
+oscillator; the numbers do not cover the NXP actuator or packet loss.
+
 All feed the same firmware servo state machine (lock, outlier rejection, step, reset). The integrator limit
 `i_max_ppm` of `pi_per_second` (0 = off) must exceed the steady frequency correction, otherwise
 the offset settles at `(correction − i_max)/kp`.

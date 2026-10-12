@@ -162,12 +162,20 @@ class PITimeAware(Controller):
     def __init__(self, **params):
         super().__init__(**params)
         self._i = 0.0
-        self._wn = self.params["wn"]
+        self._wn = self._wn_idle()
         self.saturation_ppb = self.params["sat_ppb"]
 
     def _apply_params(self):
         self.saturation_ppb = self.params["sat_ppb"]
-        self._wn = self.params["wn"]
+        self._wn = self._wn_idle()
+
+    def _wn_idle(self) -> float:
+        """Bandwidth before the first update (and after a parameter change)."""
+        return self.params["wn"]
+
+    def _wn_request(self, error: float, dt: float) -> float:
+        """Bandwidth asked for by this update, before the stability guard (a constant for ``pi_time_aware``)."""
+        return self.params["wn"]
 
     @property
     def kp(self) -> float:
@@ -181,7 +189,7 @@ class PITimeAware(Controller):
         e = -float(s.offset_ns)
         dt = s.sync_interval_s if s.sync_interval_s > 0 else s.nominal_interval_s
         dt = min(dt, self.params["dt_max_s"])
-        self._wn = min(self.params["wn"], self.params["wn_ts_max"] / dt)
+        self._wn = min(self._wn_request(e, dt), self.params["wn_ts_max"] / dt)
         sat = self.params["sat_ppb"]
         i_new = self._i + self.ki * dt * e
         out = self.kp * e + i_new
@@ -208,6 +216,78 @@ class PITimeAware(Controller):
 
     def _proportional(self, error: float) -> float:
         return self.kp * error
+
+
+class PIGainScheduled(PITimeAware):
+    """Experimental PI whose bandwidth grows with the size of the offset: fast while the error is large, slow (and so
+    quiet) once it is small.
+
+    Same law as ``pi_time_aware`` (``kp = 2 zeta wn``, ``ki = wn^2``, ``I += ki dt e``, clamp and conditional
+    integration, ``wn dt <= wn_ts_max``) but ``wn`` is not a constant: it follows the scheduling variable ``s`` [ns],
+
+        x = clip(ln(s / e_lo) / ln(e_hi / e_lo), 0, 1);     wn = wn_min * (wn_max / wn_min) ** x
+
+    i.e. ``wn_min`` for ``s <= e_lo``, ``wn_max`` for ``s >= e_hi`` and a geometric interpolation between.
+
+    ``s`` is **not** the raw ``|e|``: it is the median of the last three ``|e|`` (one noisy sample cannot speed the
+    loop up) with a slow release -- it follows the median upwards at once and downwards with the time constant
+    ``tau_release_s`` -- so the gain does not chatter around a steady state set by the jitter.
+
+    ``I`` is kept in ppb (the output of the integrator), so changing ``ki`` does not move the command: the schedule
+    is bumpless by construction.  Stability is not guaranteed for any schedule (gain scheduling is sound when the
+    scheduling variable varies slowly against the loop, which is what the filter is for); ``wn_max`` is further capped by
+    ``wn_ts_max / dt`` as in ``pi_time_aware``.  The slow bandwidth at small error also means a slower tracking of an
+    oscillator drift: for a ramp in the frequency the offset settles at (ramp rate) / wn_min^2.
+    """
+    name = "pi_gain_scheduled"
+    PARAMS = {"wn_min": (0.2, 0.01, 20.0, "natural frequency for a small error [rad/s]"),
+              "wn_max": (1.2, 0.01, 20.0, "natural frequency for a large error [rad/s]"),
+              "e_lo_ns": (1_000.0, 1.0, 1e9, "error at/below which wn = wn_min [ns]"),
+              "e_hi_ns": (100_000.0, 1.0, 1e12, "error at/above which wn = wn_max [ns]"),
+              "tau_release_s": (4.0, 0.0, 600.0, "time constant of the slow release of the scheduling variable [s]"),
+              "zeta": (1.0, 0.1, 5.0, "damping ratio []"),
+              "sat_ppb": (400_000.0, 1.0, 5e7, "command limit [ppb] (must stay below the actuator limit)"),
+              "wn_ts_max": (0.35, 0.01, 1.0, "max wn * dt [rad] (stability guard, kp*dt < 2)"),
+              "dt_max_s": (10.0, 0.01, 100.0, "measured dt is clamped to this value [s] (>= nominal Sync interval)")}
+
+    def __init__(self, **params):
+        self._hist: list[float] = []           # last |e| (ns), newest last
+        self._sched = 0.0                      # scheduling variable s [ns]
+        super().__init__(**params)
+
+    def _wn_idle(self) -> float:
+        return self.params["wn_min"]
+
+    def wn_for(self, s_ns: float) -> float:
+        """Bandwidth the schedule gives for a scheduling variable ``s_ns`` (before the ``wn_ts_max`` guard)."""
+        lo, hi = self.params["e_lo_ns"], self.params["e_hi_ns"]
+        wmin, wmax = self.params["wn_min"], self.params["wn_max"]
+        if s_ns <= lo:
+            x = 0.0
+        elif hi <= lo or s_ns >= hi:
+            x = 1.0
+        else:
+            x = math.log(s_ns / lo) / math.log(hi / lo)
+        return wmin * (wmax / wmin) ** x
+
+    @property
+    def scheduling_variable(self) -> float:
+        """``s`` [ns] used by the last update."""
+        return self._sched
+
+    def _wn_request(self, error: float, dt: float) -> float:
+        self._hist = (self._hist + [abs(error)])[-3:]
+        med = sorted(self._hist)[len(self._hist) // 2]
+        if med >= self._sched or self.params["tau_release_s"] <= 0.0 or len(self._hist) == 1:
+            self._sched = med                                        # up (or the first sample): at once
+        else:
+            self._sched += (med - self._sched) * (1.0 - math.exp(-dt / self.params["tau_release_s"]))
+        return self.wn_for(self._sched)
+
+    def reset(self) -> None:
+        super().reset()
+        self._hist = []
+        self._sched = 0.0
 
 
 class PIPerSecond(BaselinePI):
@@ -286,7 +366,7 @@ class PIPerSecond(BaselinePI):
         return out
 
 
-REGISTRY: dict[str, type[Controller]] = {c.name: c for c in (BaselinePI, PITimeAware, PIPerSecond)}
+REGISTRY: dict[str, type[Controller]] = {c.name: c for c in (BaselinePI, PITimeAware, PIGainScheduled, PIPerSecond)}
 
 
 def make_controller(name: str, params: dict[str, float] | None = None) -> Controller:

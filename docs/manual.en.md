@@ -160,6 +160,13 @@ columns — the command accepted by the driver `cmd_applied_ppb` (after the clam
   * **wn_ts_max** [rad]: caps the bandwidth at `wn·dt ≤ wn_ts_max` so the sampled loop stays stable (`kp·dt < 2`).
   * **dt_max_s** [s]: the interval measured from consecutive `t1` is clamped to this absolute value (default 10 s;
     protects against lost messages). Keep it ≥ the nominal Sync interval.
+* `pi_gain_scheduled` — like `pi_time_aware` but the bandwidth grows with the size of the offset: fast while it is large, slow and quiet once it is small.
+  * **wn_min** / **wn_max** [rad/s]: natural frequency for a small / large error (`kp = 2ζ·wn`, `ki = wn²`); between **e_lo_ns** and **e_hi_ns** [ns]
+    (logarithmic sliders) `wn` is interpolated geometrically; the applied value is still capped at `wn_ts_max/dt`.
+  * **tau_release_s** [s]: the scheduling variable is the median of the last three |offset| (a single noisy sample does not speed the loop up);
+    it rises at once and falls with this time constant (0 = no release filter).
+  * **zeta**, **sat_ppb**, **wn_ts_max**, **dt_max_s** as in `pi_time_aware`.
+  The price of the slow bandwidth at small error is a slower tracking of an oscillator drift; the measured comparison is in `docs/model.md` §6.
 * `pi_per_second` — the firmware PI law with the integral gain scaled by the Sync interval, `integral += (ki·dt/t_ref)·e`,
   and an integrator limit: `integral = clamp(integral, ±i_max); u = kp·e + integral`.
   Use it when you change the Sync interval and want the loop shape to stay the same: **kp** and **ki** are the gains

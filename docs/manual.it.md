@@ -162,6 +162,13 @@ ultime due colonne — il comando accettato dal driver `cmd_applied_ppb` (dopo i
   * **wn_ts_max** [rad]: limita la banda a `wn·dt ≤ wn_ts_max` perché l'anello campionato resti stabile (`kp·dt < 2`).
   * **dt_max_s** [s]: l'intervallo misurato da `t1` consecutivi è limitato a questo valore assoluto (default 10 s; protezione
     contro i messaggi persi). Mantienilo ≥ all'intervallo Sync nominale.
+* `pi_gain_scheduled` — come `pi_time_aware` ma la banda cresce con la grandezza dell'offset: veloce finché è grande, lenta e silenziosa quando è piccolo.
+  * **wn_min** / **wn_max** [rad/s]: frequenza naturale per errore piccolo / grande (`kp = 2ζ·wn`, `ki = wn²`); fra **e_lo_ns** ed **e_hi_ns** [ns]
+    (slider logaritmici) `wn` è interpolata in modo geometrico; il valore applicato resta limitato a `wn_ts_max/dt`.
+  * **tau_release_s** [s]: la variabile di scheduling è la mediana degli ultimi tre |offset| (un singolo campione rumoroso non accelera l'anello);
+    sale subito e scende con questa costante di tempo (0 = nessun filtro di rilascio).
+  * **zeta**, **sat_ppb**, **wn_ts_max**, **dt_max_s** come in `pi_time_aware`.
+  Il prezzo della banda lenta a errore piccolo è un inseguimento più lento di una deriva dell'oscillatore; il confronto misurato è in `docs/model.md` §6.
 * `pi_per_second` — la legge del PI firmware con il guadagno integrale scalato dall'intervallo Sync, `integrale += (ki·dt/t_ref)·e`,
   e un limite dell'integratore: `integrale = clamp(integrale, ±i_max); u = kp·e + integrale`.
   Serve quando cambi l'intervallo Sync e vuoi che la forma dell'anello resti la stessa: **kp** e **ki** sono i guadagni
