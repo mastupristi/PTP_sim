@@ -254,13 +254,17 @@ STRINGS: dict[str, dict] = {
     "scope_persist_off": _s("off", "off"),
     "scope_persist_tip": _s("How long a sweep stays on the screen, in simulated time (as on a scope: persistence off = only "
                             "the latest sweep). Older sweeps fade to black over this time; where sweeps overlap the "
-                            "trace gets brighter (intensity grading). ∞: nothing fades, sweeps accumulate until the "
-                            "position moves back or the timebase, persistence or data change.",
+                            "trace gets brighter (intensity grading). ∞: nothing fades, sweeps accumulate. Changing the "
+                            "value starts from now, as if nothing had been drawn before.",
                             "Quanto resta a schermo una scansione, in tempo simulato (come in un oscilloscopio: "
                             "persistenza off = solo l'ultima scansione). Le scansioni più vecchie sfumano fino al nero "
                             "in questo tempo; dove si sovrappongono la traccia è più luminosa (gradazione di intensità). "
-                            "∞: nulla sfuma, le scansioni si accumulano finché la posizione torna indietro o cambiano "
-                            "base dei tempi, persistenza o dati."),
+                            "∞: nulla sfuma, le scansioni si accumulano. Cambiando il valore si riparte da ora, come "
+                            "se prima non fosse stato disegnato nulla."),
+    "scope_tip_pclear": _s("Reset the persistence: forget the past and start again from now (the persistence also restarts "
+                           "when you move back before the reset point or load a new result)",
+                           "Azzera la persistenza: dimentica il passato e riparte da ora (riparte anche se torni indietro "
+                           "prima del punto di azzeramento o carichi un nuovo risultato)"),
     "scope_sweep": _s("sweep", "scansione"),
     "scope_edge": _s("slave edge", "fronte slave"),
     "scope_ambiguous": _s("|φ| > half period: the wave shows φ modulo {p}",

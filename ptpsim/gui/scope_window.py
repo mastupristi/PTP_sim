@@ -62,7 +62,8 @@ class ScopeWindow(QtWidgets.QWidget):
         self._tb_auto = TIMEBASES_NS[-1]
         self._small_since: float | None = None
         self._t_end = 0.0
-        self._acc: dict | None = None                # infinite persistence: accumulated profile, cleared like a scope does
+        self._p_origin = 0                           # persistence memory starts here (a reset forgets the earlier sweeps)
+        self._acc: dict | None = None                # infinite persistence: sweeps accumulated since the origin
         self.tb_ns = TIMEBASES_NS[-1]                # timebase of the last drawing
         self.setWindowTitle(T("scope_title"))
         self.resize(980, 600)
@@ -162,8 +163,11 @@ class ScopeWindow(QtWidgets.QWidget):
             self.persist.addItem(T("scope_persist_off") if v == 0 else "∞" if v == float("inf") else
                                  f"{v * 1e3:g} ms" if v < 1 else f"{v / 60:g} min" if v >= 60 else f"{v:g} s", v)
         self.persist.setToolTip(T("scope_persist_tip"))
-        self.persist.currentIndexChanged.connect(lambda *_: (self._acc_clear(), self._draw()))
+        self.persist.currentIndexChanged.connect(lambda *_: self.reset_persistence())
         tr.addWidget(self.persist)
+        self.btn_pclear = self._tbtn(st.standardIcon(QtWidgets.QStyle.SP_BrowserReload), "scope_tip_pclear",
+                                     self.reset_persistence)
+        tr.addWidget(self.btn_pclear)
         lay.addLayout(tr)
 
         sl = QtWidgets.QHBoxLayout()
@@ -201,7 +205,7 @@ class ScopeWindow(QtWidgets.QWidget):
 
     def _set_enabled(self, on: bool):
         for w in (self.btn_start, self.btn_rev, self.btn_back, self.btn_play, self.btn_fwd, self.btn_end,
-                  self.slider, self.speed, self.tb, self.persist, self.chk_loop):
+                  self.slider, self.speed, self.tb, self.persist, self.btn_pclear, self.chk_loop):
             w.setEnabled(on)
         self.notice.setVisible(not on)
         self.pw.setVisible(on)
@@ -218,7 +222,8 @@ class ScopeWindow(QtWidgets.QWidget):
             self._set_enabled(False)
             return
         self.model = ScopeModel.from_dict(bp, self.period_ns)
-        self._acc_clear()
+        self._p_origin = int(round(self.pos))
+        self._acc = None
         self.n_max = int(t_end_s * 1e9 / self.period_ns)
         self.pos = min(self.pos, float(self.n_max))
         self.slider.blockSignals(True)
@@ -316,8 +321,11 @@ class ScopeWindow(QtWidgets.QWidget):
                 self._tb_auto, self._small_since = need, None
         return float(self._tb_auto)
 
-    def _acc_clear(self):
+    def reset_persistence(self):
+        """Forget the past: the persistence starts again from the current sweep, as if nothing had been drawn before."""
+        self._p_origin = int(round(self.pos))
         self._acc = None
+        self._draw()
 
     def _raster_size(self) -> tuple[int, int]:
         vb = self.pi.vb
@@ -331,8 +339,11 @@ class ScopeWindow(QtWidgets.QWidget):
         wpx, hpx = self._raster_size()
         if span == float("inf"):
             key = (x0, x1, wpx, id(self.model))
-            if self._acc is None or self._acc["key"] != key or k < self._acc["k"]:
-                self._acc = {"key": key, "k": k - 1, "high": np.zeros(wpx), "edges": np.zeros(wpx), "total": 0.0}
+            if self._acc is not None and k < self._acc["k"]:               # moved back before what was accumulated
+                self._p_origin, self._acc = k, None
+            if self._acc is None or self._acc["key"] != key:               # (new timebase: rebuilt from the origin)
+                self._acc = {"key": key, "k": self._p_origin - 1, "high": np.zeros(wpx), "edges": np.zeros(wpx),
+                             "total": 0.0}
             acc = self._acc
             n = k - acc["k"]
             step = max(1, -(-n // N_SWEEPS))
@@ -369,7 +380,9 @@ class ScopeWindow(QtWidgets.QWidget):
         # linearly to black at the age of the persistence; infinite: nothing fades, all sweeps since the last clear
         span = self.persist.currentData() or 0.0
         sps = self.sweeps_per_s
-        ks, ws = persistence_samples(k, min(span, SCALE_WINDOW_S) * sps, N_SWEEPS)      # (inf: the scale looks 60 s back)
+        if k < self._p_origin:                                   # moved back before the reset point: restart there
+            self._p_origin, self._acc = k, None
+        ks, ws = persistence_samples(k, min(span, SCALE_WINDOW_S) * sps, N_SWEEPS, self._p_origin)   # (inf: 60 s back)
         d, h, _ = self.model.sweeps(ks)
         tb = self._timebase(float(np.max(np.abs(d))))
         self.tb_ns = tb
@@ -403,7 +416,7 @@ class ScopeWindow(QtWidgets.QWidget):
     # ------------------------------------------------------------------ state (kept over a language change)
     def state(self) -> dict:
         return {"pos": self.pos, "speed": self.speed.currentIndex(), "tb": self.tb.currentIndex(),
-                "persist": self.persist.currentIndex(), "loop": self.chk_loop.isChecked(),
+                "persist": self.persist.currentIndex(), "p_origin": self._p_origin, "loop": self.chk_loop.isChecked(),
                 "geometry": self.saveGeometry()}
 
     def restore(self, st: dict) -> None:
@@ -416,6 +429,9 @@ class ScopeWindow(QtWidgets.QWidget):
             self.set_position(st["pos"])
         else:
             self.pos = st["pos"]
+        self._p_origin = st["p_origin"]
+        self._acc = None
+        self._draw()
 
     # ------------------------------------------------------------------ closing
     def force_close(self):

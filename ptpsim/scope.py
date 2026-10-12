@@ -155,18 +155,18 @@ def pick_timebase_ns(edge_ns: float, available, margin: float = 1.25, divisions:
 
 
 # ---------------------------------------------------------------------- persistence (what a real scope's display does)
-def persistence_samples(k: int, span_sweeps: float, max_n: int):
+def persistence_samples(k: int, span_sweeps: float, max_n: int, k_min: int = 0):
     """Sweeps shown by a variable persistence of ``span_sweeps`` (simulated time) at sweep ``k``, as ``(ks, weights)``.
     The newest trace has weight 1 and the weight falls linearly to 0 at the age ``span_sweeps`` (the trace has faded to
     black and is erased); a longer window is thinned to at most ``max_n`` sweeps on a fixed grid (multiples of the
     step), so the picture is a function of ``k`` only and does not shimmer from frame to frame.  ``k`` itself is the
-    first element (weight 1)."""
+    first element (weight 1).  Sweeps before ``k_min`` do not exist for the display (it was reset there)."""
     if span_sweeps <= 0 or k <= 0:
         return np.array([k], dtype=np.int64), np.array([1.0])
     step = max(1, int(np.ceil(span_sweeps / max_n)))
     first = int(np.floor((k - span_sweeps) / step)) + 1                 # grid index of the oldest sweep still alive
     ks = np.arange(max(first, 0), k // step + 1, dtype=np.int64) * step
-    ks = ks[(ks < k) & (ks > k - span_sweeps)]
+    ks = ks[(ks < k) & (ks > k - span_sweeps) & (ks >= k_min)]
     ks = np.concatenate(([k], ks[::-1])).astype(np.int64)
     return ks, 1.0 - (k - ks) / span_sweeps
 

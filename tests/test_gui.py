@@ -420,25 +420,33 @@ def test_scope_timebase_and_persistence_and_ambiguity_flag():
     fixed = sc.tb.findData(2000.0)
     sc.tb.setCurrentIndex(fixed)
     assert sc.tb_ns == 2000.0
-    sc.persist.setCurrentIndex(sc.persist.findData(1.0))
     sc.set_position(10_000)
-    img = sc.img.image
-    assert sc.img.isVisible() and img.max() > 0.9 and img.shape[0] >= 300        # persistence image: levels saturated
+    sc.persist.setCurrentIndex(sc.persist.findData(1.0))                         # changing it starts from now ...
+    assert sc._p_origin == 10_000 and sc.img.isVisible()
+    assert sc.img.image.max() < 0.55                                             # ... the past is not there: one trace
+    for k in range(10_001, 10_301, 10):
+        sc.set_position(k)
+    assert sc.img.image.max() > 0.9 and sc.img.image.shape[0] >= 300             # 300 sweeps overlap: saturated levels
+    sc.set_position(10_300 + 2_000)                                              # 1 s later the trail has faded away
+    sc.reset_persistence()                                                       # the button: forget the past again
+    assert sc._p_origin == 12_300 and sc.img.image.max() < 0.55
+    sc.set_position(11_000)                                                      # back before the reset point: restart there
+    assert sc._p_origin == 11_000
     sc.persist.setCurrentIndex(0)
     assert not sc.img.isVisible()                                                # persistence off: just the trace
-    # infinite persistence accumulates what the playback passes over and clears like a scope does
-    sc.persist.setCurrentIndex(sc.persist.findData(float("inf")))
+    # infinite persistence accumulates what the playback passes over since the reset
     sc.tb.setCurrentIndex(sc.tb.findData(50_000.0))
     sc.set_position(0)
-    assert sc._acc is not None and sc._acc["k"] == 0
+    sc.persist.setCurrentIndex(sc.persist.findData(float("inf")))
+    assert sc._acc is not None and sc._acc["k"] == 0 and sc._p_origin == 0
     for k in (500, 1000, 2000, 5000):
         sc.set_position(k)
     assert sc._acc["k"] == 5000 and sc._acc["total"] > 100
     total = sc._acc["total"]
-    sc.set_position(4000)                                                        # backwards: cleared
-    assert sc._acc["k"] == 4000 and sc._acc["total"] < total
-    sc.tb.setCurrentIndex(sc.tb.findData(20_000.0))                              # new timebase: cleared
-    assert sc._acc["total"] <= 1.0
+    sc.tb.setCurrentIndex(sc.tb.findData(20_000.0))                              # new timebase: rebuilt from the origin
+    assert sc._acc["k"] == 5000 and sc._acc["total"] > 100 and sc._p_origin == 0
+    sc.set_position(4000)                                                        # backwards: restart there
+    assert sc._acc["k"] == 4000 and sc._p_origin == 4000 and sc._acc["total"] <= 1.0
     sc.persist.setCurrentIndex(0)
     assert sc._acc is None
     sc.force_close()
