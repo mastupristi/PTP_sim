@@ -118,6 +118,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._dirty: set[str] = set()        # widgets edited since the last load: only these override base_cfg
         self.rows: dict[str, ParamRow] = {}
         self.ctrl_rows: dict[str, ParamRow] = {}
+        self._adv_btn: QtWidgets.QToolButton | None = None      # "advanced" toggle of the controller parameters
+        self._adv_open = False
         self.mode = "explore"
         self.gen = 0
         self.t_change: float | None = None
@@ -227,6 +229,7 @@ class MainWindow(QtWidgets.QMainWindow):
         c = self.base_cfg
         self.rows.clear()
         self.ctrl_rows.clear()
+        self._adv_btn = None
         self.evt_lines.clear()
         self.trans_lines.clear()
         self.lim_lines.clear()
@@ -736,20 +739,45 @@ class MainWindow(QtWidgets.QMainWindow):
             for w in (r.label, r.spin, r.slider):
                 if w is not None:
                     self.ctrl_grid.removeWidget(w)
+                    w.hide()
                     w.deleteLater()
             self.rows.pop(r.name, None)
         self.ctrl_rows.clear()
         cls = REGISTRY[name]
-        for i, (k, (dflt, lo, hi, desc)) in enumerate(cls.PARAMS.items(), start=1):
+        if self._adv_btn is not None:
+            self.ctrl_grid.removeWidget(self._adv_btn)
+            self._adv_btn.deleteLater()
+            self._adv_btn = None
+        main = [k for k in cls.PARAMS if k not in cls.ADVANCED]
+        adv = [k for k in cls.PARAMS if k in cls.ADVANCED]
+        for i, k in enumerate(main + adv, start=1):
+            dflt, lo, hi, desc = cls.PARAMS[k]
             val = params.get(k, dflt)
             tip = T("pd_" + k) if ("pd_" + k) in STRINGS else desc
             row = ParamRow(k, [f"controller.params.{k}"], lo, hi, val, (hi - lo) / 200.0 if hi < 100 else 1.0,
                            decimals=3 if hi <= 20 else 1, tooltip=tip, log=k in LOG_SLIDER_PARAMS)
             row.name = "ctrl." + k
-            row.add_to(self.ctrl_grid, i)
+            grid_row = i if k not in cls.ADVANCED else i + 1                 # the "advanced" toggle sits in between
+            row.add_to(self.ctrl_grid, grid_row)
             row.changed.connect(self._on_param_changed)
             self.rows["ctrl." + k] = row
             self.ctrl_rows[k] = row
+        if adv:
+            btn = QtWidgets.QToolButton()
+            btn.setCheckable(True)
+            btn.setChecked(self._adv_open)
+            btn.setAutoRaise(True)
+            btn.setToolTip(T("ctrl_adv_tip"))
+            self.ctrl_grid.addWidget(btn, len(main) + 1, 0, 1, 3)
+            self._adv_btn = btn
+
+            def apply(on: bool, btn=btn, adv=adv):
+                self._adv_open = on
+                btn.setText(("▾ " if on else "▸ ") + T("ctrl_adv"))
+                for k in adv:
+                    self.ctrl_rows[k].set_visible(on)
+            btn.toggled.connect(apply)
+            apply(self._adv_open)
         self.ctrl_note.setText(T("cn_" + name))
 
     def _on_controller_changed(self, name: str):

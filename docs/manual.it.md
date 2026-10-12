@@ -143,7 +143,7 @@ ultime due colonne — il comando accettato dal driver `cmd_applied_ppb` (dopo i
 ### 3.2 Scheda "Controllore"
 
 ![Scheda Controllore con pi_per_second](img/gui_controller_it.png)
-*Scheda Controllore con `pi_per_second`: i guadagni `kp`, `ki` tarati a `t_ref_s` (1 s), il limite dell'integratore e `dt_max_s`, `kp_dt_max`, la descrizione della legge scelta e il gruppo "Servo del firmware".*
+*Scheda Controllore con `pi_per_second`: i guadagni `kp`, `ki` tarati a `t_ref_s` (1 s), il limite dell'integratore, la sezione ripiegata "avanzati (protezioni)" (`dt_max_s`, `kp_dt_max`), la descrizione della legge scelta e il gruppo "Servo del firmware".*
 
 **Controllore** — la legge che comanda il rate del clock. Tutti producono una correzione di frequenza **assoluta** in ppb
 (positivo = più veloce) usando solo l'**offset stimato**.
@@ -154,11 +154,12 @@ ultime due colonne — il comando accettato dal driver `cmd_applied_ppb` (dopo i
     Conseguenza: lo smorzamento dell'anello dipende dall'intervallo Sync (l'help Kconfig dice che i default vanno bene per ≈1 s).
   * Nessuna saturazione: un comando oltre ±50 000 ppm viene rifiutato dal driver NXP e il firmware azzera il servo
     (a meno che sia attivo il *clamp del comando* sperimentale qui sotto; l'integratore allora va in windup, non c'è anti-windup).
+* I parametri di protezione (`pi_time_aware`: **wn_ts_max**, **dt_max_s**; `pi_gain_scheduled`: anche **tau_release_s** e **zeta**; `pi_per_second`: **dt_max_s**, **kp_dt_max**) stanno in una sezione ripiegata *avanzati (protezioni)* della scheda Controllore; restano attivi anche se nascosti. I limiti che si dimensionano (**sat_ppb**, **i_max_ppm**) restano visibili.
 * `pi_time_aware` — PI sperimentale con tempo esplicito e anti-windup.
   * **wn** [rad/s]: frequenza naturale dell'anello chiuso; `kp = 2ζ·wn` [1/s], `ki = wn²` [1/s²].
   * **zeta** []: smorzamento (1 = criticamente smorzato).
-  * **sat_ppb** [ppb]: limite del comando (deve restare sotto 50 000 ppm = 50 000 000 ppb); l'integratore si congela finché l'uscita è
-    satura e l'errore la spingerebbe oltre (anti-windup).
+  * **sat_ppb** [ppb]: limite del comando (default 45 000 000 = 45 000 ppm; deve restare sotto 50 000 ppm = 50 000 000 ppb); l'integratore si congela finché l'uscita è
+    satura e l'errore la spingerebbe oltre (anti-windup). Limita anche la velocità di recupero: un offset iniziale grande non si recupera più in fretta di `sat_ppb` ns al secondo (49 ms a 400 000 ppb richiedono almeno 122 s).
   * **i_max_ppm** [ppm]: limite opzionale sull'integratore stesso (**0 = off**), in aggiunta al clamp dell'uscita e all'integratore congelato; deve restare sopra la correzione di frequenza a regime (errore dell'oscillatore + deriva), altrimenti l'offset non arriva a zero.
   * **wn_ts_max** [rad]: limita la banda a `wn·dt ≤ wn_ts_max` perché l'anello campionato resti stabile (`kp·dt < 2`).
   * **dt_max_s** [s]: l'intervallo misurato da `t1` consecutivi è limitato a questo valore assoluto (default 10 s; protezione

@@ -119,6 +119,11 @@ class ParamRow(QtCore.QObject):
         if self.slider is not None:
             form.addWidget(self.slider, row, 2)
 
+    def set_visible(self, on: bool):
+        for w in (self.label, self.spin, self.slider):
+            if w is not None:
+                w.setVisible(on)
+
     def set_enabled(self, on: bool):
         for w in (self.label, self.spin, self.slider):
             if w is not None:

@@ -39,6 +39,8 @@ class Controller:
     PARAMS: dict[str, tuple[float, float, float, str]] = {}
     #: saturation of the command in ppb handled by the controller itself (None = none)
     saturation_ppb: float | None = None
+    #: parameters that are guard rails more than tuning knobs: the GUI keeps them in a collapsed "advanced" section
+    ADVANCED: frozenset[str] = frozenset()
 
     def __init__(self, **params: float):
         self.params = {k: v[0] for k, v in self.PARAMS.items()}
@@ -155,9 +157,10 @@ class PITimeAware(Controller):
     Same inputs (offset estimate only), same absolute-ppb output, same firmware servo state machine.
     """
     name = "pi_time_aware"
+    ADVANCED = frozenset({"wn_ts_max", "dt_max_s"})
     PARAMS = {"wn": (1.0, 0.01, 20.0, "natural frequency [rad/s]"),
               "zeta": (1.0, 0.1, 5.0, "damping ratio []"),
-              "sat_ppb": (400_000.0, 1.0, 5e7, "command limit [ppb] (must stay below the actuator limit)"),
+              "sat_ppb": (45_000_000.0, 1.0, 5e7, "command limit [ppb] (must stay below the actuator limit)"),
               "i_max_ppm": (0.0, 0.0, 50_000.0, "integrator limit [ppm] (0 = off)"),
               "wn_ts_max": (0.35, 0.01, 1.0, "max wn * dt [rad] (stability guard, kp*dt < 2)"),
               "dt_max_s": (10.0, 0.01, 100.0, "measured dt is clamped to this value [s] (>= nominal Sync interval)")}
@@ -246,13 +249,14 @@ class PIGainScheduled(PITimeAware):
     oscillator drift: for a ramp in the frequency the offset settles at (ramp rate) / wn_min^2.
     """
     name = "pi_gain_scheduled"
+    ADVANCED = frozenset({"tau_release_s", "zeta", "wn_ts_max", "dt_max_s"})
     PARAMS = {"wn_min": (0.2, 0.01, 20.0, "natural frequency for a small error [rad/s]"),
               "wn_max": (1.2, 0.01, 20.0, "natural frequency for a large error [rad/s]"),
               "e_lo_ns": (1_000.0, 1.0, 1e9, "error at/below which wn = wn_min [ns]"),
               "e_hi_ns": (100_000.0, 1.0, 1e12, "error at/above which wn = wn_max [ns]"),
               "tau_release_s": (4.0, 0.0, 600.0, "time constant of the slow release of the scheduling variable [s]"),
               "zeta": (1.0, 0.1, 5.0, "damping ratio []"),
-              "sat_ppb": (400_000.0, 1.0, 5e7, "command limit [ppb] (must stay below the actuator limit)"),
+              "sat_ppb": (45_000_000.0, 1.0, 5e7, "command limit [ppb] (must stay below the actuator limit)"),
               "i_max_ppm": (0.0, 0.0, 50_000.0, "integrator limit [ppm] (0 = off)"),
               "wn_ts_max": (0.35, 0.01, 1.0, "max wn * dt [rad] (stability guard, kp*dt < 2)"),
               "dt_max_s": (10.0, 0.01, 100.0, "measured dt is clamped to this value [s] (>= nominal Sync interval)")}
@@ -327,6 +331,7 @@ class PIPerSecond(BaselinePI):
     docs/model.md), so it does not make every ``kp, ki, dt`` combination stable.
     """
     name = "pi_per_second"
+    ADVANCED = frozenset({"dt_max_s", "kp_dt_max"})
     PARAMS = {**BaselinePI.PARAMS,
               "i_max_ppm": (0.0, 0.0, 50_000.0, "integrator limit [ppm] (0 = off)"),
               "t_ref_s": (1.0, 0.01, 10.0, "interval at which kp, ki are tuned [s]; ki acts as ki*dt/t_ref_s"),

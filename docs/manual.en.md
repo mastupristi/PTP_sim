@@ -142,7 +142,7 @@ columns — the command accepted by the driver `cmd_applied_ppb` (after the clam
 ### 3.2 Tab "Controller"
 
 ![Controller tab with pi_per_second](img/gui_controller_en.png)
-*Controller tab with `pi_per_second`: the gains `kp`, `ki` tuned at `t_ref_s` (1 s), the integrator limit and `dt_max_s`, `kp_dt_max`, the description of the selected law and the "Firmware servo" group.*
+*Controller tab with `pi_per_second`: the gains `kp`, `ki` tuned at `t_ref_s` (1 s), the integrator limit, the collapsed "advanced (guard rails)" section (`dt_max_s`, `kp_dt_max`), the description of the selected law and the "Firmware servo" group.*
 **Controller** — which law drives the clock rate. All of them output an **absolute** frequency correction in ppb
 (positive = faster) from the **estimated offset** only.
 
@@ -152,11 +152,12 @@ columns — the command accepted by the driver `cmd_applied_ppb` (after the clam
     Consequence: the loop's damping depends on the Sync interval (the Kconfig help says the defaults suit ≈1 s).
   * No saturation: a command beyond ±50 000 ppm is rejected by the NXP driver and the firmware resets the servo
     (unless the experimental *command clamp* below is on; the integrator then winds up, there is no anti-windup).
+* The guard-rail parameters (`pi_time_aware`: **wn_ts_max**, **dt_max_s**; `pi_gain_scheduled`: also **tau_release_s** and **zeta**; `pi_per_second`: **dt_max_s**, **kp_dt_max**) sit in a collapsed *advanced (guard rails)* section of the Controller tab; they stay active when hidden. The limits you size (**sat_ppb**, **i_max_ppm**) stay visible.
 * `pi_time_aware` — experimental PI with explicit time and anti-windup.
   * **wn** [rad/s]: closed-loop natural frequency; `kp = 2ζ·wn` [1/s], `ki = wn²` [1/s²].
   * **zeta** []: damping ratio (1 = critically damped).
-  * **sat_ppb** [ppb]: clamp of the command (must stay below 50 000 ppm = 50 000 000 ppb); the integrator is frozen while
-    saturated and the error pushes further in (anti-windup).
+  * **sat_ppb** [ppb]: clamp of the command (default 45 000 000 = 45 000 ppm; must stay below 50 000 ppm = 50 000 000 ppb); the integrator is frozen while
+    saturated and the error pushes further in (anti-windup). It also bounds the slew rate: a large initial offset cannot be recovered faster than `sat_ppb` ns per second (49 ms at 400 000 ppb takes at least 122 s).
   * **i_max_ppm** [ppm]: optional limit on the integrator itself (**0 = off**), on top of the output clamp and the frozen integrator; it must stay above the steady frequency correction (oscillator error + drift), otherwise the offset cannot reach zero.
   * **wn_ts_max** [rad]: caps the bandwidth at `wn·dt ≤ wn_ts_max` so the sampled loop stays stable (`kp·dt < 2`).
   * **dt_max_s** [s]: the interval measured from consecutive `t1` is clamped to this absolute value (default 10 s;

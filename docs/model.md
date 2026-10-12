@@ -100,7 +100,7 @@ residual at 24 MHz.
 | parameters | `kp` [ppb/ns], `ki` [ppb/ns per update] | `wn` [rad/s], `zeta`; `kp = 2ζ·wn` [s⁻¹], `ki = wn²` [s⁻²] | as baseline (at `t_ref_s`) + `i_max_ppm` [ppm] (0 = off), `t_ref_s`, `dt_max_s`, `kp_dt_max` |
 | dt | none | measured from consecutive `t1` (GM timestamps), clamped to `dt_max_s` | measured from consecutive `t1`, clamped to `dt_max_s`; scales `ki` only |
 | stability | none (Kconfig: tuned for ~1 s) | `wn·dt ≤ wn_ts_max` (0.35 rad): `kp·dt < 2` | `kp_eff = min(kp, kp_dt_max/dt)` (`kp·dt ≤ 1` by default) |
-| saturation | none: driver rejects → `clock_servo_reset` | clamp ±`sat_ppb` (400 000 ppb) + anti-windup | integrator only (output limited by the servo's command clamp, if on) |
+| saturation | none: driver rejects → `clock_servo_reset` | clamp ±`sat_ppb` (default 45 000 000 ppb = 45 000 ppm, 90 % of the actuator limit; the comparison below uses 400 000 ppb explicitly) + anti-windup | integrator only (output limited by the servo's command clamp, if on) |
 | output | absolute ppb | absolute ppb | absolute ppb |
 
 `pi_per_second` has `ki_eff = ki·dt/t_ref_s` (`dt` measured from consecutive `t1`,

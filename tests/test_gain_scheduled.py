@@ -106,10 +106,12 @@ def test_closed_loop_quieter_than_pi_time_aware_on_the_noisy_scenario():
 @pytest.mark.parametrize("cls,kw", [(PITimeAware, {"wn": 1.0}), (PIGainScheduled, {})])
 def test_integrator_limit_bounds_the_integral_and_is_off_by_default(cls, kw):
     free, limited = cls(**kw), cls(i_max_ppm=5.0, **kw)
+    peak_free = 0.0
     for i in range(400):
         s = sample(-50_000 if i < 200 else 50_000, index=i)                       # long error of one sign, then the other
         free.update(s)
         limited.update(s)
+        peak_free = max(peak_free, abs(free.integral))
         assert abs(limited.integral) <= 5_000.0 + 1e-9
-    assert abs(free.integral) > 5_000.0                                           # ... which the free integrator exceeds
+    assert peak_free > 5_000.0                                                    # ... which the free integrator exceeds
     assert cls(i_max_ppm=0.0, **kw).update(sample(-1000)) == cls(**kw).update(sample(-1000))

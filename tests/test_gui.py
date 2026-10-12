@@ -79,11 +79,29 @@ def test_gain_scheduled_controller_is_selectable_with_log_sliders(win):
     c = win.build_config()
     assert c.controller.name == "pi_gain_scheduled" and c.controller.params == {
         "wn_min": 0.2, "wn_max": 1.2, "e_lo_ns": 1000.0, "e_hi_ns": 100_000.0, "tau_release_s": 4.0, "zeta": 1.0,
-        "sat_ppb": 400_000.0, "i_max_ppm": 0.0, "wn_ts_max": 0.35, "dt_max_s": 10.0}
+        "sat_ppb": 45_000_000.0, "i_max_ppm": 0.0, "wn_ts_max": 0.35, "dt_max_s": 10.0}
     assert win.ctrl_rows["e_lo_ns"].log and win.ctrl_rows["e_hi_ns"].log and not win.ctrl_rows["wn_min"].log
     win.ctrl_rows["e_hi_ns"].spin.setValue(50_000.0)
     assert win.build_config().controller.params["e_hi_ns"] == 50_000.0
     win.ctrl_combo.setCurrentText("baseline_pi")
+
+
+def test_advanced_controller_parameters_are_collapsed_but_still_in_the_config(win):
+    win._apply_cfg_to_widgets(SimConfig.load(CONFIGS[0]))
+    win.ctrl_combo.setCurrentText("pi_gain_scheduled")
+    rows = win.ctrl_rows
+    shown = lambda: {k for k, r in rows.items() if not r.spin.isHidden()}
+    main = {"wn_min", "wn_max", "e_lo_ns", "e_hi_ns", "sat_ppb", "i_max_ppm"}
+    assert shown() == main                                              # the guard rails are hidden ...
+    assert set(win.build_config().controller.params) == main | {"tau_release_s", "zeta", "wn_ts_max", "dt_max_s"}
+    win._adv_btn.setChecked(True)                                       # ... until the section is opened
+    assert shown() == set(rows)
+    win.ctrl_combo.setCurrentText("pi_per_second")                      # the choice is kept over a controller switch
+    assert shown() == set(rows) and win._adv_btn.isChecked()
+    win._adv_btn.setChecked(False)
+    assert shown() == {"kp", "ki", "i_max_ppm", "t_ref_s"}
+    win.ctrl_combo.setCurrentText("baseline_pi")
+    assert win._adv_btn is None and set(rows) == {"kp", "ki"}
 
 
 def test_default_gui_scenario_is_the_100us_20ppm_one():

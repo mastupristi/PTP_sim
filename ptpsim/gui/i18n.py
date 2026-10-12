@@ -371,6 +371,9 @@ STRINGS: dict[str, dict] = {
     "c_range": _s("out-of-range resets", "reset per comando fuori range"),
     "c_outl": _s("outliers rejected", "outlier rifiutati"),
     "c_lost": _s("lost messages", "messaggi persi"),
+    "ctrl_adv": _s("advanced (guard rails)", "avanzati (protezioni)"),
+    "ctrl_adv_tip": _s("Parameters that are guard rails more than tuning knobs; they keep working when hidden",
+                       "Parametri che sono più protezioni che manopole di taratura; restano attivi anche se nascosti"),
     "cn_baseline_pi": _s(
         "Faithful port of the firmware PI (precision_pi_update): integral += ki·e; u = kp·e + integral; "
         "e = −offset [ns]; absolute output in ppb; no dt, no saturation.",
