@@ -252,10 +252,15 @@ STRINGS: dict[str, dict] = {
                        "fronte dello slave."),
     "scope_persist": _s("persistence", "persistenza"),
     "scope_persist_off": _s("off", "off"),
-    "scope_persist_tip": _s("Also draws earlier sweeps (up to this much simulated time), fading with age: it makes the "
-                            "drift of the slave edge visible.",
-                            "Disegna anche le scansioni precedenti (fino a questo tempo simulato), sempre più tenui: "
-                            "rende visibile la deriva del fronte dello slave."),
+    "scope_persist_tip": _s("How long a sweep stays on the screen, in simulated time (as on a scope: persistence off = only "
+                            "the latest sweep). Older sweeps fade to black over this time; where sweeps overlap the "
+                            "trace gets brighter (intensity grading). ∞: nothing fades, sweeps accumulate until the "
+                            "position moves back or the timebase, persistence or data change.",
+                            "Quanto resta a schermo una scansione, in tempo simulato (come in un oscilloscopio: "
+                            "persistenza off = solo l'ultima scansione). Le scansioni più vecchie sfumano fino al nero "
+                            "in questo tempo; dove si sovrappongono la traccia è più luminosa (gradazione di intensità). "
+                            "∞: nulla sfuma, le scansioni si accumulano finché la posizione torna indietro o cambiano "
+                            "base dei tempi, persistenza o dati."),
     "scope_sweep": _s("sweep", "scansione"),
     "scope_edge": _s("slave edge", "fronte slave"),
     "scope_ambiguous": _s("|φ| > half period: the wave shows φ modulo {p}",

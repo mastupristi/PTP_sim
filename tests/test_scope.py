@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 """Oscilloscope model: edges of the slave square wave from the exact slave-clock breakpoints."""
 import numpy as np
+import pytest
 
 from ptpsim.clock import SlaveClock
 from pathlib import Path
 
 from ptpsim.config import SimConfig
 from ptpsim.engine import Simulation
-from ptpsim.scope import ScopeModel, pick_timebase_ns, square_xy
+from ptpsim.scope import ScopeModel, edge_profile, persistence_samples, phosphor, pick_timebase_ns, square_xy
 
 P = 1_000_000                      # ns
 PS_S = 10**12
@@ -117,3 +118,58 @@ def test_pick_timebase():
     assert pick_timebase_ns(100.0, tbs) == 50                       # 5 div * 50 = 250 >= 125
     assert pick_timebase_ns(-100.0, tbs) == 50
     assert pick_timebase_ns(1e9, tbs) == 1000                       # larger than everything: the coarsest
+
+
+def test_vectorised_sweeps_equal_the_scalar_ones():
+    c = SlaveClock(100_000.0, 20e-6)
+    for t_ps, slope in ((50 * PS_S, -35e-6), (120 * PS_S, 5e-6)):
+        c.set_slope(t_ps, slope)
+    c.step(200 * PS_S, 5_000.0)                                    # segment crossings and a phase step
+    big = SlaveClock(0.0, 0.0)
+    big.step(1, -1_700_000_000_123_456_789)                        # huge offset, integer reduction
+    for clk, ks in ((c, [0, 3, 49_999, 50_000, 50_001, 119_999, 120_005, 199_999, 200_001, 250_000, 3_000_000]),
+                    (big, list(range(1, 40)))):
+        m = model(clk)
+        edge, half, phi = m.sweeps(np.array(ks))
+        for i, k in enumerate(ks):
+            sw = m.sweep(k)
+            assert (sw.edge_ns, sw.half_ns, sw.phi_ns) == (edge[i], half[i], phi[i]), k
+
+
+def test_persistence_samples_fade_linearly_and_are_a_function_of_k_only():
+    ks, w = persistence_samples(100, 10, 2000)                    # 10 sweeps of persistence
+    assert list(ks) == [100, 99, 98, 97, 96, 95, 94, 93, 92, 91]     # the sweep at age 10 is gone
+    assert w[0] == 1.0 and np.allclose(w, 1 - (100 - ks) / 10) and (w > 0).all()
+    assert list(persistence_samples(100, 0, 2000)[0]) == [100]       # off: just the latest sweep
+    assert list(persistence_samples(0, 10, 2000)[0]) == [0]
+    # a long window is thinned on a fixed grid: the same sweeps are used from one frame to the next
+    ks1, _ = persistence_samples(100_000, 60_000, 2000)
+    ks2, _ = persistence_samples(100_030, 60_000, 2000)
+    assert ks1.size <= 2001 and set(ks1[1:]) & set(ks2[1:])
+    assert all(k % 30 == 0 for k in ks1[1:])
+
+
+def test_edge_profile_matches_the_square_wave_away_from_the_edges():
+    rng = np.random.default_rng(1)
+    e = rng.uniform(-5e5, 5e5, 40)
+    h = 500_000 / (1 + rng.uniform(-1e-4, 1e-4, 40))
+    w = rng.uniform(0.1, 1.0, 40)
+    x0, x1, width = -1.2e6, 1.2e6, 400
+    high, edges, total = edge_profile(e, h, w, x0, x1, width)
+    xc = x0 + (np.arange(width) + 0.5) * (x1 - x0) / width
+    ref = sum(wi * (np.floor((xc - ei) / hi) % 2 == 0) for ei, hi, wi in zip(e, h, w))
+    assert total == w.sum() and (edges > 0).any()
+    assert np.allclose(high[edges == 0], ref[edges == 0])            # exact wherever no edge falls in the column
+    n_edges = sum(np.floor((x1 - ei) / hi) - np.ceil((x0 - ei) / hi) + 1 for ei, hi in zip(e, h))
+    assert edges.sum() == pytest.approx(sum(
+        wi * (np.floor((x1 - ei) / hi) - np.ceil((x0 - ei) / hi) + 1) for ei, hi, wi in zip(e, h, w)))
+    assert n_edges > 40
+    # profiles are additive: two batches give the profile of their union
+    a, b = edge_profile(e[:10], h[:10], w[:10], x0, x1, width), edge_profile(e[10:], h[10:], w[10:], x0, x1, width)
+    for part, whole in zip(zip(a, b), (high, edges, total)):
+        assert np.allclose(part[0] + part[1], whole)
+
+
+def test_phosphor_saturates_and_grows_with_overlap():
+    v = phosphor([0.0, 1.0, 2.0, 10.0, 1e9])
+    assert v[0] == 0.0 and v[-1] == pytest.approx(1.0) and (np.diff(v) > 0).all() and v[1] < 0.5

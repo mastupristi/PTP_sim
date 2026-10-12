@@ -27,7 +27,7 @@ ptpsim-gui [scenario.json] [--lang en|it]   # interactive GUI (English default, 
 ptpsim-run run --config configs/default_deterministic.json --out results/run   # headless + CSV
 ptpsim-run run --preset noisy --set intervals.sync_log=-3 --set seed=5 --out results/run_noisy
 ptpsim-run compare --out results      # baseline vs variant, writes results/comparison.{csv,md}
-pytest                                # 168 tests (the C-reference tests need gcc, the GUI tests Qt)
+pytest                                # 172 tests (the C-reference tests need gcc, the GUI tests Qt)
 python bench/benchmark.py             # engine benchmark   (bench/gui_latency.py: GUI reactivity)
 ```
 
@@ -165,7 +165,7 @@ physical reference; **Offset**: estimated, true, optional overlay of the **unmod
 diagnostics**; optional **PI terms**), which take all the available height, and the metrics table, always fully visible.
 Units ns/µs/ms, zoom/pan, legends; the plots can be detached into their own window (closing it re-embeds them). An
 **oscilloscope** window plays two 1 kHz square waves (GM and slave clock) triggered on the GM rising edge, with transport
-controls, a position slider, timebase and persistence (`ptpsim/scope.py`, `ptpsim/gui/scope_window.py`).
+controls, a position slider, timebase and scope-like persistence (variable or infinite, intensity-graded) (`ptpsim/scope.py`, `ptpsim/gui/scope_window.py`).
 
 * **PI terms** plot (ppm): P = kp·e, the integrator I and the controller output at every servo update, the command applied
   to the clock (held), and lines at the active limits (actuator, command clamp, integrator limit, controller limit) — to

@@ -422,9 +422,25 @@ def test_scope_timebase_and_persistence_and_ambiguity_flag():
     assert sc.tb_ns == 2000.0
     sc.persist.setCurrentIndex(sc.persist.findData(1.0))
     sc.set_position(10_000)
-    assert sum(len(c.xData) > 0 for c in sc.ghosts if c.xData is not None) > 0
+    img = sc.img.image
+    assert sc.img.isVisible() and img.max() > 0.9 and img.shape[0] >= 300        # persistence image: levels saturated
     sc.persist.setCurrentIndex(0)
-    assert all(c.xData is None or len(c.xData) == 0 for c in sc.ghosts)
+    assert not sc.img.isVisible()                                                # persistence off: just the trace
+    # infinite persistence accumulates what the playback passes over and clears like a scope does
+    sc.persist.setCurrentIndex(sc.persist.findData(float("inf")))
+    sc.tb.setCurrentIndex(sc.tb.findData(50_000.0))
+    sc.set_position(0)
+    assert sc._acc is not None and sc._acc["k"] == 0
+    for k in (500, 1000, 2000, 5000):
+        sc.set_position(k)
+    assert sc._acc["k"] == 5000 and sc._acc["total"] > 100
+    total = sc._acc["total"]
+    sc.set_position(4000)                                                        # backwards: cleared
+    assert sc._acc["k"] == 4000 and sc._acc["total"] < total
+    sc.tb.setCurrentIndex(sc.tb.findData(20_000.0))                              # new timebase: cleared
+    assert sc._acc["total"] <= 1.0
+    sc.persist.setCurrentIndex(0)
+    assert sc._acc is None
     sc.force_close()
 
 

@@ -13,16 +13,19 @@ import numpy as np
 import pyqtgraph as pg
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ..scope import DEFAULT_PERIOD_NS, ScopeModel, pick_timebase_ns, square_xy
+from ..scope import (DEFAULT_PERIOD_NS, ScopeModel, edge_profile, persistence_samples, phosphor, pick_timebase_ns,
+                     square_xy)
 from .i18n import T
 
 C_GM, C_SLAVE = "#F0E442", "#56B4E9"               # Okabe-Ito yellow / sky blue: legible on the dark screen
 GM_LEVELS, SLAVE_LEVELS = (2.0, 3.0), (0.0, 1.0)
 TIMEBASES_NS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1e3, 2e3, 5e3, 1e4, 2e4, 5e4, 1e5, 2e5]     # per division
 SPEEDS = [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]                                          # simulated s / wall s
-PERSIST_S = [0.0, 0.01, 0.1, 1.0, 10.0, 60.0]
+PERSIST_S = [0.0, 0.01, 0.1, 1.0, 10.0, 60.0, float('inf')]        # simulated time; inf = infinite persistence
 DIVISIONS = 5                                        # per side of the trigger
-N_GHOSTS = 24
+N_SWEEPS = 2000                                      # most sweeps accumulated per frame (a longer window is thinned)
+SCALE_WINDOW_S = 60.0                                # auto timebase: the sweeps of this much recent time must fit
+RASTER_Y = (-0.25, 1.35)                             # screen range covered by the slave trace image (y units)
 FRAME_MS = 33
 ZOOM_IN_HOLD_S = 0.6                                 # auto timebase: wall time a smaller offset must last (playing)
 
@@ -59,6 +62,7 @@ class ScopeWindow(QtWidgets.QWidget):
         self._tb_auto = TIMEBASES_NS[-1]
         self._small_since: float | None = None
         self._t_end = 0.0
+        self._acc: dict | None = None                # infinite persistence: accumulated profile, cleared like a scope does
         self.tb_ns = TIMEBASES_NS[-1]                # timebase of the last drawing
         self.setWindowTitle(T("scope_title"))
         self.resize(980, 600)
@@ -96,7 +100,13 @@ class ScopeWindow(QtWidgets.QWidget):
             pi.addItem(ln, ignoreBounds=True)
             self.grid_lines.append(ln)
         self.gm_curve = pi.plot(pen=pg.mkPen(C_GM, width=2.5))
-        self.ghosts = [pi.plot(pen=pg.mkPen(C_SLAVE, width=1.5)) for _ in range(N_GHOSTS)]
+        self.img = pg.ImageItem()                        # persistence: intensity-graded accumulation of the slave sweeps
+        self.img.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)       # light adds up on the black screen
+        self.img.setLookupTable(self._lut())
+        self.img.setLevels((0.0, 1.0))
+        self.img.setZValue(-10)
+        self.img.setVisible(False)
+        pi.addItem(self.img, ignoreBounds=True)
         self.slave_curve = pi.plot(pen=pg.mkPen(C_SLAVE, width=2.5))
         self.lbl_gm = pg.TextItem(T("scope_gm"), color=C_GM, anchor=(0, 1))
         self.lbl_slave = pg.TextItem(T("scope_slave"), color=C_SLAVE, anchor=(0, 1))
@@ -149,10 +159,10 @@ class ScopeWindow(QtWidgets.QWidget):
         tr.addWidget(QtWidgets.QLabel(T("scope_persist")))
         self.persist = QtWidgets.QComboBox()
         for v in PERSIST_S:
-            self.persist.addItem(T("scope_persist_off") if v == 0 else f"{v * 1e3:g} ms" if v < 1 else
-                                 f"{v / 60:g} min" if v >= 60 else f"{v:g} s", v)
+            self.persist.addItem(T("scope_persist_off") if v == 0 else "∞" if v == float("inf") else
+                                 f"{v * 1e3:g} ms" if v < 1 else f"{v / 60:g} min" if v >= 60 else f"{v:g} s", v)
         self.persist.setToolTip(T("scope_persist_tip"))
-        self.persist.currentIndexChanged.connect(lambda *_: self._draw())
+        self.persist.currentIndexChanged.connect(lambda *_: (self._acc_clear(), self._draw()))
         tr.addWidget(self.persist)
         lay.addLayout(tr)
 
@@ -168,6 +178,15 @@ class ScopeWindow(QtWidgets.QWidget):
         sl.addWidget(self.time_lbl)
         lay.addLayout(sl)
         QtGui.QShortcut(QtGui.QKeySequence("Space"), self, activated=self.btn_play.click)
+
+    @staticmethod
+    def _lut() -> np.ndarray:
+        """Intensity grading: black -> the channel colour (one fresh trace) -> white (hit again and again)."""
+        v = np.linspace(0.0, 1.0, 256)[:, None]
+        base = np.array(QtGui.QColor(C_SLAVE).getRgb()[:3], dtype=np.float64)[None, :]
+        lo = base * np.minimum(1.0, v / 0.5)
+        hi = base + (np.array([215.0, 240.0, 255.0]) - base) * np.clip((v - 0.5) / 0.5, 0.0, 1.0)
+        return np.where(v <= 0.5, lo, hi).astype(np.uint8)
 
     def _tbtn(self, icon, tip_key, fn, text: str = "") -> QtWidgets.QToolButton:
         b = QtWidgets.QToolButton()
@@ -199,6 +218,7 @@ class ScopeWindow(QtWidgets.QWidget):
             self._set_enabled(False)
             return
         self.model = ScopeModel.from_dict(bp, self.period_ns)
+        self._acc_clear()
         self.n_max = int(t_end_s * 1e9 / self.period_ns)
         self.pos = min(self.pos, float(self.n_max))
         self.slider.blockSignals(True)
@@ -296,19 +316,62 @@ class ScopeWindow(QtWidgets.QWidget):
                 self._tb_auto, self._small_since = need, None
         return float(self._tb_auto)
 
+    def _acc_clear(self):
+        self._acc = None
+
+    def _raster_size(self) -> tuple[int, int]:
+        vb = self.pi.vb
+        w = int(min(max(vb.width(), 300), 1600))
+        h = int(min(max(vb.height() * (RASTER_Y[1] - RASTER_Y[0]) / 3.8, 60), 500))
+        return w, h
+
+    def _persistence_image(self, k, span, x0, x1, ks, ws, d, h) -> None:
+        """Accumulate the sweeps of the persistence window (or, for the infinite one, all those seen since the last
+        clear) into columns and draw them as an intensity-graded image."""
+        wpx, hpx = self._raster_size()
+        if span == float("inf"):
+            key = (x0, x1, wpx, id(self.model))
+            if self._acc is None or self._acc["key"] != key or k < self._acc["k"]:
+                self._acc = {"key": key, "k": k - 1, "high": np.zeros(wpx), "edges": np.zeros(wpx), "total": 0.0}
+            acc = self._acc
+            n = k - acc["k"]
+            step = max(1, -(-n // N_SWEEPS))
+            kk = np.arange(k, acc["k"], -step, dtype=np.int64)
+            dd, hh, _ = self.model.sweeps(kk)
+            hi, ed, tot = edge_profile(dd, hh, np.ones(kk.size), x0, x1, wpx)
+            acc["high"] += hi
+            acc["edges"] += ed
+            acc["total"] += tot
+            acc["k"] = k
+            high, edges, total = acc["high"], acc["edges"], acc["total"]
+        else:
+            high, edges, total = edge_profile(d, h, ws, x0, x1, wpx)
+        y0, y1 = RASTER_Y
+        row = lambda y: int(round((y - y0) / (y1 - y0) * (hpx - 1)))
+        r_lo, r_hi = row(SLAVE_LEVELS[0]), row(SLAVE_LEVELS[1])
+        img = np.zeros((wpx, hpx))
+        thick = 2                                                        # rows per trace line
+        img[:, r_lo:r_lo + thick] = (total - high)[:, None]
+        img[:, r_hi:r_hi + thick] = high[:, None]
+        img[:, r_lo + thick:r_hi] = edges[:, None]                      # the vertical edges join the two levels
+        img[:, r_lo:r_lo + thick] += edges[:, None]
+        img[:, r_hi:r_hi + thick] += edges[:, None]
+        self.img.setImage(phosphor(img), autoLevels=False, levels=(0.0, 1.0))
+        self.img.setRect(QtCore.QRectF(x0 * 1e-9, y0, (x1 - x0) * 1e-9, y1 - y0))
+        self.img.setVisible(True)
+
     def _draw(self):
         if self.model is None:
             return
         k = int(round(self.pos))
         sw = self.model.sweep(k)
-        # persistence: earlier sweeps, evenly spread over the chosen span, fading with age
+        # persistence (simulated time): the sweeps of the window, the newest at full weight and the older ones fading
+        # linearly to black at the age of the persistence; infinite: nothing fades, all sweeps since the last clear
         span = self.persist.currentData() or 0.0
-        ghosts = []
-        if span > 0 and k > 0:
-            ks = k - np.linspace(0, span * self.sweeps_per_s, N_GHOSTS + 1)[1:]
-            ks = np.unique(np.clip(np.round(ks), 0, k).astype(np.int64))[::-1]
-            ghosts = [self.model.sweep(int(kk)) for kk in ks[ks != k][:N_GHOSTS]]
-        tb = self._timebase(max([abs(sw.edge_ns)] + [abs(g.edge_ns) for g in ghosts]))
+        sps = self.sweeps_per_s
+        ks, ws = persistence_samples(k, min(span, SCALE_WINDOW_S) * sps, N_SWEEPS)      # (inf: the scale looks 60 s back)
+        d, h, _ = self.model.sweeps(ks)
+        tb = self._timebase(float(np.max(np.abs(d))))
         self.tb_ns = tb
         half_screen = DIVISIONS * tb
         x0, x1 = -half_screen, half_screen
@@ -320,13 +383,12 @@ class ScopeWindow(QtWidgets.QWidget):
         self.gm_curve.setData(gx * ns, gy)
         sx, sy = square_xy(sw.edge_ns, sw.half_ns, x0, x1, *SLAVE_LEVELS)
         self.slave_curve.setData(sx * ns, sy)
-        for i, g in enumerate(ghosts):
-            gx2, gy2 = square_xy(g.edge_ns, g.half_ns, x0, x1, *SLAVE_LEVELS)
-            alpha = int(160 * (1 - i / max(1, len(ghosts))) ** 1.5) + 20
-            self.ghosts[i].setPen(pg.mkPen(QtGui.QColor(86, 180, 233, alpha), width=1.5))
-            self.ghosts[i].setData(gx2 * ns, gy2)
-        for c in self.ghosts[len(ghosts):]:
-            c.setData([], [])
+        if span > 0:
+            self._persistence_image(k, span, x0, x1, ks, ws, d, h)
+            self.slave_curve.setPen(pg.mkPen(C_SLAVE, width=1.5))
+        else:
+            self.img.setVisible(False)
+            self.slave_curve.setPen(pg.mkPen(C_SLAVE, width=2.5))
         self.lbl_gm.setPos(x0 * ns, GM_LEVELS[1] + 0.05)
         self.lbl_slave.setPos(x0 * ns, SLAVE_LEVELS[1] + 0.05)
         self.lbl_trig.setPos(0.0, GM_LEVELS[1] + 0.4)

@@ -198,13 +198,15 @@ trigger and reduced to `[−P/2, P/2)`. The solve is exact (a bisect on the segm
 the next segment); the first-order `d = −φ` is wrong by `slope·φ` (2.4 ns at 20 ppm and 120 µs). The integer part of the
 phase (a PHC at 0 against a 1.7e18 ns epoch) is reduced modulo `P` *as an integer* before the float part is added, so
 the picture keeps ns resolution. When `|φ| > P/2` the wave only shows `φ mod P` (the sweep is flagged `ambiguous`).
-Nothing is stored per edge: any sweep of the run is computed on demand, so the playback length is the simulated duration. The result carries the slave-clock segments (int64 anchors, integer and float phase, slope): 1,189 segments for the default 300 s run (38 kB of 610 kB), 14,389 for 3,600 s (0.46 MB of 2.5 MB); building the model takes 0.06–0.3 ms and a frame with 24 persistence traces about 8 ms (offscreen).
+Nothing is stored per edge: any sweep of the run is computed on demand, so the playback length is the simulated duration. The result carries the slave-clock segments (int64 anchors, integer and float phase, slope): 1,189 segments for the default 300 s run (38 kB of 610 kB), 14,389 for 3,600 s (0.46 MB of 2.5 MB); building the model takes 0.06–0.3 ms; a frame with persistence (up to 2,000 sweeps, vectorised) takes ≈ 11 ms including the offscreen repaint, 4.5 ms without persistence (1400×800 window, 300 s run).
+
+**Persistence** follows what the display of a digital scope does (variable persistence, as documented e.g. by Keysight for the Infiniium/FlexDCA: new points at full intensity, older ones fade to black over the persistence time; infinite persistence: no fading, until a setting changes). Each trigger draws one sweep; a sweep stays on screen for the persistence time and its weight falls linearly from 1 (newest) to 0 at that age, where it is erased. Persistence is in *simulated* time, so the picture depends on the sweep number only (scrubbing, rewinding and the playback speed give the same image). The sweeps of the window are accumulated per screen column as weighted statistics of the square waves (`edge_profile`: weight of the waves high in the column, weight of the edges in the column, total weight; additive), and the brightness is a saturating function of the accumulated weight (`phosphor`: one fresh trace ≈ 0.3, overlapping traces brighten towards 1; the LUT goes black → channel colour → pale), which gives the intensity grading: rare positions dim, frequent ones bright. A window longer than 2,000 sweeps is thinned on a fixed grid. Infinite persistence cannot be recomputed from scratch (3.6 M sweeps in an hour): it accumulates the sweeps the playback passes over and, like a scope, clears when the position moves backwards or the timebase, persistence or data change. The auto timebase looks at the sweeps of the last 60 s of the window.
 
 Approximations: the slave wave comes from the average-rate clock model (it ignores the NXP timer tick, see §5) and has
 no output jitter. The oscilloscope shows Exploration results only (live mode would need the breakpoint stream
 in `LiveSession.delta()`; not done). Tests: `tests/test_scope.py` (identical clocks, sign, linear drift, exact solve
 within 1 ps against the clock, phase step, huge offset, ambiguity), `tests/test_gui.py` (transport, timebase,
-persistence, main-window wiring).
+persistence, main-window wiring); the vectorised sweeps equal the scalar ones bit for bit, `edge_profile` matches the square wave column by column and is additive.
 
 ## 8. Test matrix (CLAUDE.md §10 → tests)
 

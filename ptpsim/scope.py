@@ -101,6 +101,30 @@ class ScopeModel:
         return Sweep(k=int(k), t_s=t_ps / 1e12, edge_ns=d, half_ns=self.period_ns / 2.0 / (1.0 + float(self.slope[j])),
                      phi_ns=phi, ambiguous=abs(phi) > self.period_ns / 2.0)
 
+    def sweeps(self, ks) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Vectorised :meth:`sweep` for an array of sweep numbers: ``(edge_ns, half_ns, phi_ns)`` arrays, the same
+        values as the scalar method (same segment search and iteration)."""
+        t = np.asarray(ks, dtype=np.int64) * self._p_ps
+        j = np.maximum(0, np.searchsorted(self.t0, t, side="right") - 1)
+        d = np.zeros(t.shape)
+        active = np.ones(t.shape, dtype=bool)
+        p = self.period_ns
+        for _ in range(4):
+            ja, ta = j[active], t[active]
+            a = self._big_mod[ja] + self.small[ja] + self.slope[ja] * ((ta - self.t0[ja]) / PS_PER_NS)
+            a = a - p * np.floor((a + p / 2) / p)
+            da = -a / (1.0 + self.slope[ja])
+            d[active] = da
+            j2 = np.maximum(0, np.searchsorted(self.t0, ta + np.rint(da * PS_PER_NS).astype(np.int64), side="right") - 1)
+            changed = j2 != ja
+            j[active] = j2
+            idx = np.flatnonzero(active)
+            active[idx[~changed]] = False
+            if not active.any():
+                break
+        phi = self.big[j].astype(np.float64) + self.small[j] + self.slope[j] * ((t - self.t0[j]) / PS_PER_NS)
+        return d, p / 2.0 / (1.0 + self.slope[j]), phi
+
     def sweep_at(self, t_s: float) -> Sweep:
         """Sweep whose trigger is the GM edge nearest to ``t_s``."""
         return self.sweep(int(round(t_s * 1e12 / self._p_ps)))
@@ -128,3 +152,54 @@ def pick_timebase_ns(edge_ns: float, available, margin: float = 1.25, divisions:
     """Smallest ns/div whose half screen (``divisions`` divisions) holds ``margin * |edge|`` (the largest if none)."""
     need = margin * abs(edge_ns)
     return next((tb for tb in available if divisions * tb >= need), available[-1])
+
+
+# ---------------------------------------------------------------------- persistence (what a real scope's display does)
+def persistence_samples(k: int, span_sweeps: float, max_n: int):
+    """Sweeps shown by a variable persistence of ``span_sweeps`` (simulated time) at sweep ``k``, as ``(ks, weights)``.
+    The newest trace has weight 1 and the weight falls linearly to 0 at the age ``span_sweeps`` (the trace has faded to
+    black and is erased); a longer window is thinned to at most ``max_n`` sweeps on a fixed grid (multiples of the
+    step), so the picture is a function of ``k`` only and does not shimmer from frame to frame.  ``k`` itself is the
+    first element (weight 1)."""
+    if span_sweeps <= 0 or k <= 0:
+        return np.array([k], dtype=np.int64), np.array([1.0])
+    step = max(1, int(np.ceil(span_sweeps / max_n)))
+    first = int(np.floor((k - span_sweeps) / step)) + 1                 # grid index of the oldest sweep still alive
+    ks = np.arange(max(first, 0), k // step + 1, dtype=np.int64) * step
+    ks = ks[(ks < k) & (ks > k - span_sweeps)]
+    ks = np.concatenate(([k], ks[::-1])).astype(np.int64)
+    return ks, 1.0 - (k - ks) / span_sweeps
+
+
+def edge_profile(edge_ns, half_ns, weights, x0_ns: float, x1_ns: float, width: int):
+    """Weighted per-column statistics of many square waves over the screen ``[x0, x1]`` cut in ``width`` columns.
+    Wave ``i`` has rising edges at ``edge_i + 2 m half_i`` and falling ones half a period later.  Returns
+    ``(high, edges, total)``: the weight of the waves that are high in each column, the weight of the edges that
+    fall into each column, and the total weight (a wave not high is low).  All three are additive, so profiles of
+    different batches of sweeps can simply be summed."""
+    e = np.asarray(edge_ns, dtype=np.float64)
+    h = np.asarray(half_ns, dtype=np.float64)
+    w = np.asarray(weights, dtype=np.float64)
+    j_lo = np.ceil((x0_ns - e) / h).astype(np.int64)                    # first edge index on screen
+    j_hi = np.floor((x1_ns - e) / h).astype(np.int64)
+    cnt = np.maximum(0, j_hi - j_lo + 1)
+    # an edge j is rising for even j; the level on the left border is the one after edge j_lo - 1
+    start_high = ((j_lo - 1) % 2 == 0)
+    diff = np.zeros(width + 1)
+    edges = np.zeros(width)
+    n = int(cnt.sum())
+    if n:
+        i = np.repeat(np.arange(e.size), cnt)
+        jj = j_lo[i] + (np.arange(n) - np.repeat(np.cumsum(cnt) - cnt, cnt))
+        col = np.clip(np.floor((e[i] + jj * h[i] - x0_ns) / (x1_ns - x0_ns) * width).astype(np.int64), 0, width - 1)
+        sign = np.where(jj % 2 == 0, 1.0, -1.0) * w[i]
+        diff += np.bincount(col, weights=sign, minlength=width + 1)[: width + 1]
+        edges += np.bincount(col, weights=w[i], minlength=width)[:width]
+    high = float(w[start_high].sum()) + np.cumsum(diff[:width])
+    return high, edges, float(w.sum())
+
+
+def phosphor(h, gain: float = 3.0):
+    """Brightness (0..1, saturating) of an accumulated weight: one fresh trace gives about 0.3, repeated hits of the
+    same pixel brighten it towards 1, like the intensity grading of a digital phosphor display."""
+    return 1.0 - np.exp(-np.asarray(h, dtype=np.float64) / gain)

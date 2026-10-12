@@ -78,13 +78,12 @@ the left of the trigger). It shows the **Exploration** result (in live mode it s
 rewind (play backwards), start / end, ±1 sweep, a slider to position the playback (the length is the simulated duration;
 nothing is stored per edge: only the slave-clock segments travel with the result, about 1,200 for 300 s (38 kB, 6 % of the result) and 14,000 for one hour (0.46 MB)), a **loop** checkbox, the **speed** (simulated seconds per
 second of playback: 1× = real time = 1000 sweeps per second), the **timebase** (ns/µs per division, or *auto*: the finest
-one that still shows the slave edge; it zooms out at once and zooms in only after the offset stayed small for 0.6 s while playing) and the **persistence** (earlier sweeps, fading with age, which makes the drift of
-the edge visible). Under the plot: simulated time, sweep number, the true offset φ and the slave edge. A 1 kHz wave
+one that still shows the slave edge; it zooms out at once and zooms in only after the offset stayed small for 0.6 s while playing) and the **persistence**, which works as on a real scope: each trigger draws one sweep and a sweep stays on the screen for the persistence time (in simulated time), fading to black over it; where sweeps overlap the trace is brighter (intensity grading), so a drifting edge leaves a trail whose bright part is where the edge dwelt. *off* shows only the latest sweep; **∞** never fades: the sweeps accumulate until you move backwards or change the timebase, persistence or data. Under the plot: simulated time, sweep number, the true offset φ and the slave edge. A 1 kHz wave
 cannot show an offset larger than half a period unambiguously: then the picture shows φ modulo 1 ms and a warning says so.
 The slave wave is an ideal output of the average-rate clock model (no NXP timer tick, no output jitter).
 
 ![Oscilloscope window](img/gui_scope_en.png)
-*The oscilloscope in the default scenario (100 µs initial offset, 20 ppm) 6 s into the run, persistence 1 s: the slave edge, 46 µs after the GM trigger, is closing in on it (the faint edges are the earlier sweeps).*
+*The oscilloscope in the default scenario (100 µs initial offset, 20 ppm) 6 s into the run, persistence 1 s: the slave edge, 46 µs after the GM trigger, is closing in on it (the band to its right is the trail of the earlier sweeps, fading with age).*
 
 * *Delay plot*: the firmware's delay estimate (green) is **held** until the next Delay_Resp is processed, with a dot at
   every sample (so the real sampling rate is visible); the dashed black line is the physical delay of the network.
