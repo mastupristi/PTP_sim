@@ -157,6 +157,7 @@ columns — the command accepted by the driver `cmd_applied_ppb` (after the clam
   * **zeta** []: damping ratio (1 = critically damped).
   * **sat_ppb** [ppb]: clamp of the command (must stay below 50 000 ppm = 50 000 000 ppb); the integrator is frozen while
     saturated and the error pushes further in (anti-windup).
+  * **i_max_ppm** [ppm]: optional limit on the integrator itself (**0 = off**), on top of the output clamp and the frozen integrator; it must stay above the steady frequency correction (oscillator error + drift), otherwise the offset cannot reach zero.
   * **wn_ts_max** [rad]: caps the bandwidth at `wn·dt ≤ wn_ts_max` so the sampled loop stays stable (`kp·dt < 2`).
   * **dt_max_s** [s]: the interval measured from consecutive `t1` is clamped to this absolute value (default 10 s;
     protects against lost messages). Keep it ≥ the nominal Sync interval.
@@ -165,7 +166,7 @@ columns — the command accepted by the driver `cmd_applied_ppb` (after the clam
     (logarithmic sliders) `wn` is interpolated geometrically; the applied value is still capped at `wn_ts_max/dt`.
   * **tau_release_s** [s]: the scheduling variable is the median of the last three |offset| (a single noisy sample does not speed the loop up);
     it rises at once and falls with this time constant (0 = no release filter).
-  * **zeta**, **sat_ppb**, **wn_ts_max**, **dt_max_s** as in `pi_time_aware`.
+  * **zeta**, **sat_ppb**, **i_max_ppm** (integrator limit, 0 = off), **wn_ts_max**, **dt_max_s** as in `pi_time_aware`.
   The price of the slow bandwidth at small error is a slower tracking of an oscillator drift; the measured comparison is in `docs/model.md` §6.
 * `pi_per_second` — the firmware PI law with the integral gain scaled by the Sync interval, `integral += (ki·dt/t_ref)·e`,
   and an integrator limit: `integral = clamp(integral, ±i_max); u = kp·e + integral`.

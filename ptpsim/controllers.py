@@ -148,7 +148,9 @@ class PITimeAware(Controller):
       ``kp * dt < 2``, so a fixed wn would go unstable at long Sync intervals;
     * the command is clamped to +-``sat_ppb`` and the integrator is frozen when the output is
       saturated and the error would push it further (conditional integration): no windup,
-      and the actuator limit (50000 ppm) is never reached, so there is no servo reset.
+      and the actuator limit (50000 ppm) is never reached, so there is no servo reset;
+    * optionally (``i_max_ppm`` > 0) the integrator itself is limited to +-``i_max_ppm``: it must stay above the
+      steady frequency correction (oscillator error + drift), otherwise the offset cannot reach zero.
 
     Same inputs (offset estimate only), same absolute-ppb output, same firmware servo state machine.
     """
@@ -156,6 +158,7 @@ class PITimeAware(Controller):
     PARAMS = {"wn": (1.0, 0.01, 20.0, "natural frequency [rad/s]"),
               "zeta": (1.0, 0.1, 5.0, "damping ratio []"),
               "sat_ppb": (400_000.0, 1.0, 5e7, "command limit [ppb] (must stay below the actuator limit)"),
+              "i_max_ppm": (0.0, 0.0, 50_000.0, "integrator limit [ppm] (0 = off)"),
               "wn_ts_max": (0.35, 0.01, 1.0, "max wn * dt [rad] (stability guard, kp*dt < 2)"),
               "dt_max_s": (10.0, 0.01, 100.0, "measured dt is clamped to this value [s] (>= nominal Sync interval)")}
 
@@ -192,6 +195,9 @@ class PITimeAware(Controller):
         self._wn = min(self._wn_request(e, dt), self.params["wn_ts_max"] / dt)
         sat = self.params["sat_ppb"]
         i_new = self._i + self.ki * dt * e
+        limit_ppb = self.params["i_max_ppm"] * 1000.0
+        if limit_ppb > 0.0 and abs(i_new) > limit_ppb:
+            i_new = math.copysign(limit_ppb, i_new)
         out = self.kp * e + i_new
         if out > sat or out < -sat:
             self.saturated_count += 1
@@ -247,6 +253,7 @@ class PIGainScheduled(PITimeAware):
               "tau_release_s": (4.0, 0.0, 600.0, "time constant of the slow release of the scheduling variable [s]"),
               "zeta": (1.0, 0.1, 5.0, "damping ratio []"),
               "sat_ppb": (400_000.0, 1.0, 5e7, "command limit [ppb] (must stay below the actuator limit)"),
+              "i_max_ppm": (0.0, 0.0, 50_000.0, "integrator limit [ppm] (0 = off)"),
               "wn_ts_max": (0.35, 0.01, 1.0, "max wn * dt [rad] (stability guard, kp*dt < 2)"),
               "dt_max_s": (10.0, 0.01, 100.0, "measured dt is clamped to this value [s] (>= nominal Sync interval)")}
 

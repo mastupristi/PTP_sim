@@ -159,6 +159,7 @@ ultime due colonne — il comando accettato dal driver `cmd_applied_ppb` (dopo i
   * **zeta** []: smorzamento (1 = criticamente smorzato).
   * **sat_ppb** [ppb]: limite del comando (deve restare sotto 50 000 ppm = 50 000 000 ppb); l'integratore si congela finché l'uscita è
     satura e l'errore la spingerebbe oltre (anti-windup).
+  * **i_max_ppm** [ppm]: limite opzionale sull'integratore stesso (**0 = off**), in aggiunta al clamp dell'uscita e all'integratore congelato; deve restare sopra la correzione di frequenza a regime (errore dell'oscillatore + deriva), altrimenti l'offset non arriva a zero.
   * **wn_ts_max** [rad]: limita la banda a `wn·dt ≤ wn_ts_max` perché l'anello campionato resti stabile (`kp·dt < 2`).
   * **dt_max_s** [s]: l'intervallo misurato da `t1` consecutivi è limitato a questo valore assoluto (default 10 s; protezione
     contro i messaggi persi). Mantienilo ≥ all'intervallo Sync nominale.
@@ -167,7 +168,7 @@ ultime due colonne — il comando accettato dal driver `cmd_applied_ppb` (dopo i
     (slider logaritmici) `wn` è interpolata in modo geometrico; il valore applicato resta limitato a `wn_ts_max/dt`.
   * **tau_release_s** [s]: la variabile di scheduling è la mediana degli ultimi tre |offset| (un singolo campione rumoroso non accelera l'anello);
     sale subito e scende con questa costante di tempo (0 = nessun filtro di rilascio).
-  * **zeta**, **sat_ppb**, **wn_ts_max**, **dt_max_s** come in `pi_time_aware`.
+  * **zeta**, **sat_ppb**, **i_max_ppm** (limite dell'integratore, 0 = off), **wn_ts_max**, **dt_max_s** come in `pi_time_aware`.
   Il prezzo della banda lenta a errore piccolo è un inseguimento più lento di una deriva dell'oscillatore; il confronto misurato è in `docs/model.md` §6.
 * `pi_per_second` — la legge del PI firmware con il guadagno integrale scalato dall'intervallo Sync, `integrale += (ki·dt/t_ref)·e`,
   e un limite dell'integratore: `integrale = clamp(integrale, ±i_max); u = kp·e + integrale`.

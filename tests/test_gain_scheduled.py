@@ -101,3 +101,15 @@ def test_closed_loop_quieter_than_pi_time_aware_on_the_noisy_scenario():
     assert gs["settling_s"] is not None and ta["settling_s"] is not None
     assert gs["rms_final_ns"] < 0.8 * ta["rms_final_ns"]           # slow bandwidth near zero filters the jitter
     assert gs["settling_s"] <= 1.3 * ta["settling_s"]              # without a (much) slower transient
+
+
+@pytest.mark.parametrize("cls,kw", [(PITimeAware, {"wn": 1.0}), (PIGainScheduled, {})])
+def test_integrator_limit_bounds_the_integral_and_is_off_by_default(cls, kw):
+    free, limited = cls(**kw), cls(i_max_ppm=5.0, **kw)
+    for i in range(400):
+        s = sample(-50_000 if i < 200 else 50_000, index=i)                       # long error of one sign, then the other
+        free.update(s)
+        limited.update(s)
+        assert abs(limited.integral) <= 5_000.0 + 1e-9
+    assert abs(free.integral) > 5_000.0                                           # ... which the free integrator exceeds
+    assert cls(i_max_ppm=0.0, **kw).update(sample(-1000)) == cls(**kw).update(sample(-1000))

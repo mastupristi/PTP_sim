@@ -172,7 +172,7 @@ with no trend and no resets.
 
 `pi_gain_scheduled` (experimental) is `pi_time_aware` with a bandwidth that depends on the size of the offset, `wn(s) = wn_min·(wn_max/wn_min)^x`
 with `x = clip(ln(s/e_lo)/ln(e_hi/e_lo), 0, 1)` (defaults 0.2 → 1.2 rad/s between 1 µs and 100 µs), `kp = 2ζ·wn`, `ki = wn²`, `I += ki·dt·e`, clamp and
-conditional integration as in `pi_time_aware`, and `wn ≤ wn_ts_max/dt`. The scheduling variable `s` is the median of the last three `|e|` (one noisy sample
+conditional integration as in `pi_time_aware` (plus its optional integrator limit `i_max_ppm`, off by default), and `wn ≤ wn_ts_max/dt`. The scheduling variable `s` is the median of the last three `|e|` (one noisy sample
 cannot speed the loop up) with a slow release (`tau_release_s`, 4 s: it rises at once and falls exponentially), so the gain does not chatter around a steady
 state set by the jitter. `I` is stored in ppb, so a change of `ki` does not move the command (bumpless by construction). Gain scheduling has no general
 stability guarantee: it relies on `s` varying slowly against the loop. The slow bandwidth at small error tracks a drift of the oscillator frequency

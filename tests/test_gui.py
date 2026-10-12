@@ -68,7 +68,7 @@ def test_controller_switch_builds_the_new_parameter_set(win):
     win.ctrl_combo.setCurrentText("pi_time_aware")
     c = win.build_config()
     assert c.controller.name == "pi_time_aware" and set(c.controller.params) == {
-        "wn", "zeta", "sat_ppb", "wn_ts_max", "dt_max_s"}
+        "wn", "zeta", "sat_ppb", "i_max_ppm", "wn_ts_max", "dt_max_s"}
     win.ctrl_combo.setCurrentText("baseline_pi")
     assert win.build_config().controller.params == {"kp": 0.7, "ki": 0.3}
 
@@ -79,7 +79,7 @@ def test_gain_scheduled_controller_is_selectable_with_log_sliders(win):
     c = win.build_config()
     assert c.controller.name == "pi_gain_scheduled" and c.controller.params == {
         "wn_min": 0.2, "wn_max": 1.2, "e_lo_ns": 1000.0, "e_hi_ns": 100_000.0, "tau_release_s": 4.0, "zeta": 1.0,
-        "sat_ppb": 400_000.0, "wn_ts_max": 0.35, "dt_max_s": 10.0}
+        "sat_ppb": 400_000.0, "i_max_ppm": 0.0, "wn_ts_max": 0.35, "dt_max_s": 10.0}
     assert win.ctrl_rows["e_lo_ns"].log and win.ctrl_rows["e_hi_ns"].log and not win.ctrl_rows["wn_min"].log
     win.ctrl_rows["e_hi_ns"].spin.setValue(50_000.0)
     assert win.build_config().controller.params["e_hi_ns"] == 50_000.0
