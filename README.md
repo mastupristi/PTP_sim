@@ -27,7 +27,7 @@ ptpsim-gui [scenario.json] [--lang en|it]   # interactive GUI (English default, 
 ptpsim-run run --config configs/default_deterministic.json --out results/run   # headless + CSV
 ptpsim-run run --preset noisy --set intervals.sync_log=-3 --set seed=5 --out results/run_noisy
 ptpsim-run compare --out results      # baseline vs variant, writes results/comparison.{csv,md}
-pytest                                # 180 tests (the C-reference tests need gcc, the GUI tests Qt)
+pytest                                # 206 tests (the C-reference tests need gcc, the GUI tests Qt)
 python bench/benchmark.py             # engine benchmark   (bench/gui_latency.py: GUI reactivity)
 ```
 
@@ -54,6 +54,7 @@ at Sync 62.5 ms, 100 µs step: undershoot 22.9 µs against 64.6 µs.*
 | `ptpsim/metrics.py`, `export.py`, `compare.py`, `analysis.py`, `cli.py` | metrics, CSV/JSON export, comparison, analytic loop model, CLI |
 | `ptpsim/gui/`, `ptpsim/live.py` | GUI (separate worker *process*), incremental live session |
 | `ptpsim/scope.py` | headless oscilloscope model: edges of the slave square wave from the exact clock breakpoints |
+| `ptpsim/pll.py`, `ptpsim/fsync.py` | i.MX RT1170 Audio PLL arithmetic (`NUM`/`DENOM`); FSYNC architectures B (shared PLL) and A (second servo on the PTP clock) |
 | `tests/` | unit/integration tests; `tests/c_ref/` vendored Zephyr C sources compiled by the tests |
 | `configs/` | scenario files (`scripts/make_configs.py`); `results/` committed baseline-vs-variant results |
 | `bench/` | benchmarks and their recorded results; `gain_scheduled.py` compares `pi_gain_scheduled` with the others |
@@ -207,6 +208,16 @@ read→set latency (`latency.step_ns`). A PHC that boots at 0 against a 1.7×10�
 offset is carried as an exact integer while huge, so the residual after the step is ns-accurate
 (`tests/test_engine.py::test_phc_starting_at_zero_is_aligned_by_a_step_with_ns_accuracy`).
 
+### FSYNC (TDM frame sync)
+
+The follower's 48 kHz FSYNC can be modelled (Actuator tab → *FSYNC*; `fsync` in JSON) from the i.MX RT1170 Audio PLL
+(`f_VCO = 24 MHz·(DIV_SELECT + NUM/DENOM)`, default 786.432 MHz = `33 − 232 000 000/10⁹`, 0.0305 ppb per `NUM` LSB):
+**B** — PTP timer (VCO/4 = 196.608 MHz) and FSYNC from the same PLL, the PTP servo trims `NUM`; **A** — FSYNC from the PLL,
+a second servo trims it from the PTP timestamps of its edges every 48 (1 ms) or 480 (10 ms) edges. Measured: in B the PHC
+locks but FSYNC stays **+204.5 ppb** fast, the residual of the timer correction programmed for ratio 1 at 196.608 MHz, which the
+PLL compensates for the PHC and FSYNC does not have; in A FSYNC follows the PHC (mean +0.008 ppb, RMS 1.7 ppb vs GM; 0.9 ns RMS
+vs the PHC grid). A at 1 ms costs 1.9 s per 300 s (Python loop), over the 200 ms target. Details: [docs/model.md](docs/model.md) §7c.
+
 ## Metrics (definitions)
 
 Computed separately for the **true** and the **estimated** offset, on full-resolution data (`ptpsim/metrics.py`):
@@ -224,6 +235,7 @@ RMS and bias on a configurable final window, saturation/reset counters, divergen
 | Identical clocks, offset only, frequency error, phase continuity, t2/t3 before FUP/Resp, pairing, rate change between t2 and t3, ordering, asymmetry bias, saturation/anti-windup, interval changes, 1e6 s precision, jitter distribution/seeds | `tests/test_engine.py`, `tests/test_units.py` | ✔ verified |
 | Command clamp (off = firmware, NaN not clamped, exact at the actuator limit), step threshold, integrator limit of `pi_per_second` (off at `dt = t_ref` = baseline bit-identical, windup bound, residual below the steady correction), `firmware.delay_rate_comp` (open-loop bias removed, Sync 2 s stable, off = bit-identical, overlay never uses it), `pi_per_second` (bit-identical at `dt = t_ref` for `kp ≤ kp_dt_max`, `ki/dt` constant, damping independent of the Sync interval, `kp·dt` guard), P/I recording, unmodified-firmware overlay | `tests/test_servo_options.py` | ✔ verified (model only) |
 | `pi_gain_scheduled` (geometric schedule, median-of-3 outlier rejection, slow release, equal to `pi_time_aware` at constant bandwidth, stability guard, reset, lower RMS on the noisy scenario) | `tests/test_gain_scheduled.py` | ✔ verified (model only) |
+| FSYNC: Audio PLL arithmetic, architecture B (timer residual, no FSYNC step, `NUM` range, 200 kHz steps), architecture A (FSYNC on the PHC/GM grid, decimation, wrapped/unwrapped detector, incremental run, PTP loop unchanged) | `tests/test_pll.py`, `tests/test_fsync.py` | ✔ verified (model only) |
 | Baseline vs **hardware** | no real logs available | ✘ **not validated** |
 | Log importer / replay | needs the real instrumentation format (not in any branch) | ✘ not implemented |
 

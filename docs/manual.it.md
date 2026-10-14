@@ -86,13 +86,22 @@ clock (niente tick del timer NXP, niente jitter sull'uscita).
 ![Finestra dell'oscilloscopio](img/gui_scope_it.png)
 *L'oscilloscopio nello scenario di default (offset iniziale 100 µs, 20 ppm) a 11 s dall'inizio a 48 kHz, persistenza 1 s: il fronte dello slave, 5,2 µs dopo il trigger del GM, si sta ancora assestando; la banda sfumata è la scia delle scansioni precedenti (l'offset veniva da +10 µs, il disegno lo mostra modulo 20,8 µs).*
 
+Quando la simulazione modella FSYNC (scheda Attuatore → FSYNC, §3.6) l'oscilloscopio ha due canali sotto il GM: l'onda
+sincrona con il PHC (l'orologio del servo PTP, azzurra) e l'**FSYNC** del follower (verde), ognuno con la sua persistenza e lettura.
+
+![Oscilloscopio con i due servo dell'architettura A](img/gui_scope_fsync_it.png)
+*Architettura A, a 11 s nello scenario di default, persistenza 100 ms: FSYNC (secondo servo) sta sull'onda del PHC (servo PTP), entrambi 5,2 µs dopo il fronte del GM mentre l'anello PTP si assesta.*
+
 * *Grafico Delay*: la stima del delay del firmware (verde) è **tenuta** fino all'elaborazione della Delay_Resp successiva, con un
   punto a ogni campione (così si vede la frequenza reale dei campioni); la linea nera tratteggiata è il delay fisico della rete.
 * *Grafico Offset*: offset reale (blu), stimato (arancio), opzionalmente la baseline (rosa, tratteggiata) per confronto:
   il **firmware non modificato** (PI baseline 0.7/0.3, costanti di `clock.c`, nessun clamp del comando) sullo stesso scenario e seed.
   Le righe verticali rosse punteggiate indicano step/reset del servo; le righe grigie tratteggiate (live) i cambi di parametro.
 * *Diagnostica rate*: i ppb comandati dal servo contro l'errore di rate effettivo del clock rispetto al GM (include
-  l'errore dell'oscillatore).
+  l'errore dell'oscillatore); con FSYNC modellato anche l'**errore di rate di FSYNC** rispetto al GM.
+* *FSYNC* (casella **FSYNC**, richiede un'architettura FSYNC, solo Esplorazione): la fase reale di FSYNC rispetto alla griglia
+  del GM e a quella del PHC, entrambe avvolte su un periodo (±10,4 µs a 48 kHz) e, nell'architettura A, l'offset che vede il
+  secondo servo (campioni, diradati per il disegno).
 * *Termini PI* (ppm): a ogni aggiornamento del servo il termine proporzionale **P = kp·e**, l'integratore **I** e l'**uscita
   del controllore** (P + I per le leggi PI, prima del clamp del comando); il **comando applicato** al clock (mantenuto, verde)
   mostra il clamp e il ritorno al nominale a ogni reset del servo. Step e outlier rifiutati non aggiornano, quindi nessun punto.
@@ -287,6 +296,31 @@ n ∈ [−4, 2]: è una scelta della GUI, **non** un limite del protocollo (il f
   la terna di registri `INC / INC_CORR / ATCOR` a fine corsa (`actuator.clock_hz`, `actuator.max_ratio_ppm` in JSON; l'ultimo =
   `CONFIG_PTP_CLOCK_NXP_ENET_MAX_RATIO_PPM`, default 50 000).
 
+* **FSYNC (frame sync TDM)** — il frame sync a 48 kHz del follower dall'Audio PLL dell'i.MX RT1170
+  (`f_VCO = 24 MHz × (DIV_SELECT + NUM/DENOM)`; il pannello mostra l'impostazione: 786,432 MHz = 24 MHz × (33 − 232 000 000/10⁹),
+  1 LSB = 0,0305 ppb, range di `NUM` −9 304 … +23 464 ppm, al massimo 254 ppm per scrittura). L'obiettivo è la **frequenza** di FSYNC.
+  * **Architettura**: *off* (come prima); **B** — timer PTP (VCO/4 = 196,608 MHz) e FSYNC (VCO/16 384) derivano entrambi dal PLL e il
+    servo PTP regola `NUM` (la scelta dell'attuatore sopra non è usata); **A** — il timer PTP è disciplinato dall'attuatore sopra,
+    FSYNC viene dal PLL e un **secondo servo** ne regola `NUM` dai timestamp PTP dei fronti di FSYNC.
+  * **Servo 2 ogni** [fronti] (A): 48 = 1 ms, 480 = 10 ms a 48 kHz. 1 ms costa ≈ 1,9 s per 300 s di simulazione.
+  * **Rivelatore di fase** (A): *avvolto* — distanza del timestamp del fronte dal punto più vicino della griglia dell'orologio PTP;
+    dopo uno step PTP FSYNC si riallinea entro mezzo periodo; *non avvolto* — dalla griglia ancorata al primo fronte, FSYNC
+    recupera tutto lo step.
+  * **wn / zeta servo 2** (A): il secondo servo è `pi_time_aware` (default 20 rad/s, 1); altri controllori via JSON
+    (`fsync.controller`).
+  * **Scritture NUM > 200 kHz**: l'AN14420 ammette al massimo 200 kHz di VCO per scrittura; *divise in passi* a un tempo di lock
+    (8,33 µs) l'uno dall'altro (default), *limitate* (il resto non viene applicato) o *una scrittura*.
+  * Cosa aspettarsi: in **B** il PHC si aggancia ma FSYNC resta ≈ **+204,5 ppb** veloce — la correzione del timer programmata per
+    ratio 1 a 196,608 MHz lascia il PHC 204,5 ppb lento, il PLL lo compensa e FSYNC, che non ha quel residuo, eredita l'opposto
+    (scivola di un periodo ogni ≈ 102 s). In **A** FSYNC segue il PHC (≈ 0 ppb medio, 1,7 ppb RMS; 0,9 ns RMS sulla griglia del PHC).
+    La tabella delle metriche ha una riga *FSYNC (finestra finale)*. JSON: `fsync.*` (§6).
+
+![Architettura A](img/gui_fsync_a_it.png)
+*Architettura A, 120 s: il grafico FSYNC mostra FSYNC − griglia GM (verde, avvolta finché l'offset supera mezzo periodo), FSYNC − griglia PHC (blu, tratteggiata) e ciò che vede il servo 2 (arancio); la riga della tabella dice medio +0,008 ppb, RMS 1,667 ppb, 0,89 ns RMS sulla griglia del PHC.*
+
+![Architettura B](img/gui_fsync_b_it.png)
+*Architettura B, 300 s: il PHC si aggancia (grafico dell'offset), FSYNC deriva rispetto alla griglia del GM di +204,5 ppb (il dente di sega nel grafico FSYNC, un periodo ogni ≈ 102 s).*
+
 ## 4. Metriche (tabella)
 
 Tutte le metriche usano i dati a piena risoluzione. Per l'offset reale e per quello stimato separatamente (e per la baseline sovrapposta):
@@ -338,6 +372,11 @@ deve essere > 0) e i gruppi `intervals`, `oscillator`, `network`, `latency`, `tx
 (10 ms), `lock_samples` (3), `outlier_ns` (100 ms), `outlier_samples` (2), `delay_req_clear_ns` (3 s), più lo sperimentale
 `cmd_clamp_ppm` (0 = off, non presente nel firmware).
 Un oggetto jitter è `{ "kind": "none|uniform|normal|exponential", "scale_ns": x, "clip_sigma": 4 }`.
+`fsync`: `mode` (`off` | `shared` = B | `cascade` = A), `initial_offset_ns` (fase di FSYNC rispetto alla griglia del GM a t = 0;
+`null` = l'offset iniziale del PHC), `decimation` (48), `phase_detector` (`wrapped` | `unwrapped`), `cmd_latency_ns` (cattura →
+scrittura di `NUM`), `capture_noise_ns`, `controller` (`name`, `params`: il secondo servo, default `pi_time_aware` 20 rad/s) e `pll`:
+`fref_hz` (24 MHz), `vco_hz` (786,432 MHz), `den` (10⁹), `timer_div` (4, B), `fsync_div` (16 384), `step_limit_hz` (200 kHz),
+`step_policy` (`substep` | `cap` | `off`).
 
 Riga di comando: `ptpsim-run run [--config f | --preset default|noisy] [--set chiave=valore …] --out dir`;
 `ptpsim-run compare --out results` (baseline vs variante); `ptpsim-gui [file.json] [--lang en|it]`.

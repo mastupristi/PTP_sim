@@ -246,6 +246,64 @@ in `LiveSession.delta()`; not done). Tests: `tests/test_scope.py` (identical clo
 within 1 ps against the clock, phase step, huge offset, ambiguity), `tests/test_gui.py` (transport, timebase,
 persistence, main-window wiring); the vectorised sweeps equal the scalar ones bit for bit, `edge_profile` matches the square wave column by column and is additive.
 
+## 7c. FSYNC: TDM frame sync of the follower (`ptpsim/pll.py`, `ptpsim/fsync.py`)
+
+The GM's FSYNC is assumed synchronous with its network clock (edges at `k·P` of the GM time, `P` = 1/48 kHz). The
+follower's goal is the **frequency** of FSYNC: the GM's FSYNC is never read, so its phase is not a target (the plots show it
+anyway, wrapped to one period). `fsync.mode` = `off` keeps the simulator exactly as before (the whole test suite).
+
+**Audio PLL (i.MX RT1170).** IMXRT1170RM rev. 5 §14.4.3, §15.8, §15.9.5 and AN14420: `f_VCO = Fref·(DIV_SELECT + NUM/DENOM)`,
+`Fref` = 24 MHz (the crystal that feeds *every* PLL of the chip), `DIV_SELECT` 27–54, VCO 650–1300 MHz, `NUM` signed 30 bits,
+`DENOM` unsigned 30 bits, `NUM/DENOM` within ±1 (RM; AN14420 says ±2 — the stricter one is used); only `NUM` may change on the
+fly, at most `Fref/200` times per second (lock time ≤ 200/Fref = 8.33 µs) and by at most 200 kHz of VCO per write without a
+glitch. The default VCO is 786.432 MHz with `DENOM` = 10⁹ (a power of ten, so `NUM` per ppb is the decimal constant 32.768):
+`+768 000 000` does not fit 30 signed bits, so the setting is `DIV_SELECT` = 33, `NUM` = −232 000 000. One LSB = 0.024 Hz of VCO
+= 0.0305 ppb; the `NUM` range gives −9 304 … +23 464 ppm (asymmetric); 200 kHz per write = 8 333 333 LSB = 254 ppm. Timer root
+= VCO/4 = 196.608 MHz (≤ 200 MHz), FSYNC = VCO/16 384 = 48 kHz = 4096 timer ticks. All arithmetic is integer (`AudioPll`):
+`NUM = NUM0 + round(ppb·n0/10⁹)`, deviation `(NUM − NUM0)/n0` exact. Writes larger than 200 kHz follow `fsync.pll.step_policy`:
+`substep` (default: several writes of ≤ 200 kHz, one lock time apart — 5 000 ppm take 20 writes, 0.17 ms), `cap` (one write
+limited to 200 kHz, the rest not applied), `off` (one write). The lock transient after a write is not modelled: the write
+takes effect at once (phase error ≤ 254 ppm × 8.33 µs ≈ 2 ps per write).
+
+**Architecture B (`shared`): one servo.** The ENET 1588 timer and FSYNC are both clocked by the Audio PLL, and the PTP servo's
+ratio goes to `NUM` (`PllActuator`; a ratio beyond the `NUM` range is rejected → servo reset, as with the NXP driver). The timer
+period at 196.608 MHz is 5.0863 ns, not a whole number: the driver programs `ATINC`/`ATCOR` once for ratio 1 (as at timer start)
+and leaves them, and that average tick is **204.47 ppb slower** than the exact period (`INC` = 5, `INC_CORR` = 32, `ATCOR` = 312).
+The PTP loop removes it by trimming the VCO up, and FSYNC — which is VCO/16 384 without the timer's correction — ends up
+**+204.47 ppb fast** against the GM: measured over the last 60 s of the default 300 s scenario, mean +204.469 ppb, RMS
+204.486 ppb, while the PHC is locked (offset RMS 3.3 ns, timestamps on the 5.09 ns tick). FSYNC walks off by one period
+every ≈ 102 s. FSYNC is a separate piecewise-linear clock with the same rate events as the PHC and no phase steps (a
+`clock_step` sets the counter, not the PLL divider). To remove the bias the firmware would have to account for the timer's
+residual (or choose a timer setting without one); the simulator shows it, it does not fix it.
+
+**Architecture A (`cascade`): two servos.** The PTP timer is disciplined by the configured actuator (ideal or NXP); FSYNC comes
+from the Audio PLL; every `fsync.decimation` edges (48 = 1 ms, 480 = 10 ms) its rising edge is timestamped by the PTP timer
+(PHC reading floored to the timer tick, whole ns, optional noise on its own random stream `fsync.cap`) and a second servo
+writes `NUM`. FSYNC → PHC → GM. The PHC does not depend on FSYNC, so the second servo runs **after** the PTP loop on the PHC
+history (exact historical reads with the integer `big` part, plus the crystal-error history, which FSYNC shares with the
+PHC; `oscillator.timer_error_ppb` is the k_timer's and does not reach it); it is incremental, so a run chunked in time gives
+the same arrays. Phase detector: `wrapped` (default) — distance of the timestamp from the nearest point of the PHC grid
+`k·P`, in `[−P/2, P/2)`, exact rational arithmetic; after a PTP step FSYNC re-aligns within half a period (it does not slew
+the step); `unwrapped` — from the grid anchored on the first captured edge (slews the whole step). Offset convention as for
+the PTP servo (`FSYNC − PHC`, > 0 = early); `dt` measured from the timestamps; default controller `pi_time_aware` with
+`wn` = 20 rad/s, `zeta` = 1 (any controller of §6 can be configured in `fsync.controller`). Measured (default scenario,
+ideal PTP actuator, 1 ms, 120 s, last 60 s): FSYNC frequency error vs GM mean +0.008 ppb, RMS 1.667 ppb (it follows the PHC's
+rate, which moves at every PTP update); FSYNC − PHC grid RMS 0.89 ns, max 1.33 ns. With a locked PHC the wrapped detector also
+puts FSYNC on the GM grid (modulo the period), under the assumption that the GM's FSYNC edges are at `k·P` of its time.
+
+**Cost.** The second servo is a plain loop outside the event heap: 6.4 µs per update (Python), i.e. 1.9 s for 300 s at 1 ms
+(300 000 updates) and 0.19 s at 10 ms, against 29–43 ms for the PTP loop itself: at 1 ms the 200 ms GUI target of the
+default scenario is **not** met (the GUI shows the time; Numba or compiled code would be the next step, not done). The FSYNC
+segments sent to the oscilloscope are one per write (300 001 for 300 s at 1 ms); the plots get at most 60 000 servo-2 samples
+(rendering only; the metrics use all of them).
+
+**Not modelled.** PLL output jitter and fractional spurs (no figures in the RM; the edge-jitter option is the timestamp
+noise), `DITHER_EN`, spread spectrum, the AI-interface write latency (use `fsync.cmd_latency_ns`), the counter staircase of
+the ENET timer (§5). FSYNC plots and the FSYNC oscilloscope channel are for Exploration results only.
+Tests: `tests/test_pll.py` (representability, ppb→`NUM`, range, step policies), `tests/test_fsync.py` (B: residual, no step
+of FSYNC, range rejection, 200 kHz steps one lock time apart, policies; A: FSYNC on the PHC and GM grids, decimation, wrapped vs
+unwrapped after a step, incremental = one-shot, PTP loop bit-identical, own noise stream, tick quantisation).
+
 ## 8. Test matrix (CLAUDE.md §10 → tests)
 
 | Requirement | Test |

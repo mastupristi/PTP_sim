@@ -85,13 +85,22 @@ The slave wave is an ideal output of the average-rate clock model (no NXP timer 
 ![Oscilloscope window](img/gui_scope_en.png)
 *The oscilloscope in the default scenario (100 µs initial offset, 20 ppm) 11 s into the run at 48 kHz, persistence 1 s: the slave edge, 5.2 µs after the GM trigger, is still settling; the faded band is the trail of the earlier sweeps (the offset came from +10 µs, the picture shows it modulo 20.8 µs).*
 
+When the run models FSYNC (Actuator tab → FSYNC, §3.6) the oscilloscope has two channels under the GM: the wave locked to the
+PHC (the PTP servo's clock, blue) and the follower's **FSYNC** (green), each with its own persistence and readout.
+
+![Oscilloscope with the two servos of architecture A](img/gui_scope_fsync_en.png)
+*Architecture A, 11 s into the default scenario, persistence 100 ms: FSYNC (second servo) sits on the PHC wave (PTP servo), both 5.2 µs after the GM edge while the PTP loop settles.*
+
 * *Delay plot*: the firmware's delay estimate (green) is **held** until the next Delay_Resp is processed, with a dot at
   every sample (so the real sampling rate is visible); the dashed black line is the physical delay of the network.
 * *Offset plot*: true offset (blue), estimated offset (orange), optionally the baseline (pink, dashed) for comparison:
   the **unmodified firmware** (baseline PI 0.7/0.3, `clock.c` constants, no command clamp) on the same scenario and seed.
   Vertical dotted red lines mark servo steps/resets; vertical dashed grey lines (live mode) mark parameter changes.
 * *Rate diagnostics*: the ppb commanded by the servo vs the actual rate error of the clock relative to the GM
-  (includes the oscillator error).
+  (includes the oscillator error); with FSYNC modelled also the **FSYNC rate error** against the GM.
+* *FSYNC* (checkbox **FSYNC**, needs an FSYNC architecture, Exploration only): the true phase of FSYNC against the GM grid
+  and against the PHC grid, both wrapped to one period (±10.4 µs at 48 kHz), and in architecture A the offset the second servo
+  sees (samples, decimated for drawing).
 * *PI terms* (ppm): at every servo update the proportional term **P = kp·e**, the integrator **I** and the **controller
   output** (P + I for the PI laws, before the command clamp); the **command applied** to the clock (held, green) shows the
   clamp and the return to nominal at every servo reset. Steps and rejected outliers have no update, so no point.
@@ -287,6 +296,30 @@ n ∈ [−4, 2] — this is a GUI choice, **not** a protocol limit (the firmware
   triple `INC / INC_CORR / ATCOR` of the end of the run (`actuator.clock_hz`, `actuator.max_ratio_ppm` in JSON; the latter =
   `CONFIG_PTP_CLOCK_NXP_ENET_MAX_RATIO_PPM`, default 50 000).
 
+* **FSYNC (TDM frame sync)** — the follower's 48 kHz frame sync from the i.MX RT1170 Audio PLL
+  (`f_VCO = 24 MHz × (DIV_SELECT + NUM/DENOM)`; the panel shows the setting: 786.432 MHz = 24 MHz × (33 − 232 000 000/10⁹),
+  1 LSB = 0.0305 ppb, `NUM` range −9 304 … +23 464 ppm, at most 254 ppm per write). The goal is the FSYNC **frequency**.
+  * **Architecture**: *off* (as before); **B** — the PTP timer (VCO/4 = 196.608 MHz) and FSYNC (VCO/16 384) both come from the
+    PLL and the PTP servo trims `NUM` (the actuator choice above is not used); **A** — the PTP timer is disciplined by the actuator
+    above, FSYNC comes from the PLL and a **second servo** trims its `NUM` from the PTP timestamps of the FSYNC edges.
+  * **Servo 2 every** [edges] (A): 48 = 1 ms, 480 = 10 ms at 48 kHz. 1 ms costs ≈ 1.9 s per 300 s of simulation.
+  * **Phase detector** (A): *wrapped* — distance of the edge timestamp from the nearest point of the PTP-clock grid; after a PTP
+    step FSYNC re-aligns within half a period; *unwrapped* — from the grid anchored on the first edge, FSYNC slews the whole step.
+  * **Servo 2 wn / zeta** (A): the second servo is `pi_time_aware` (default 20 rad/s, 1); other controllers via JSON
+    (`fsync.controller`).
+  * **NUM writes > 200 kHz**: AN14420 allows at most 200 kHz of VCO per write; *split in steps* one lock time (8.33 µs) apart
+    (default), *capped* (the rest is not applied) or *one write*.
+  * What to expect: in **B** the PHC locks but FSYNC stays ≈ **+204.5 ppb** fast — the timer correction programmed for ratio 1
+    at 196.608 MHz leaves the PHC 204.5 ppb slow, the PLL compensates it and FSYNC, which does not have it, inherits the
+    opposite (it walks one period every ≈ 102 s). In **A** FSYNC follows the PHC (≈ 0 ppb mean, 1.7 ppb RMS; 0.9 ns RMS on the
+    PHC grid). The metrics table has a row *FSYNC (final window)*. JSON: `fsync.*` (§6).
+
+![Architecture A](img/gui_fsync_a_en.png)
+*Architecture A, 120 s: the FSYNC plot shows FSYNC − GM grid (green, wrapped while the offset is beyond half a period), FSYNC − PHC grid (blue, dashed) and what servo 2 sees (orange); the table row reads mean +0.008 ppb, RMS 1.667 ppb, 0.89 ns RMS on the PHC grid.*
+
+![Architecture B](img/gui_fsync_b_en.png)
+*Architecture B, 300 s: the PHC locks (offset plot), FSYNC drifts against the GM grid by +204.5 ppb (the saw-tooth in the FSYNC plot, one period per ≈ 102 s).*
+
 ## 4. Metrics (table)
 
 All metrics use full-resolution data. For the true offset and the estimated offset separately (and the baseline overlay):
@@ -339,6 +372,11 @@ time base of all timestamps, default 1.7×10¹⁸ ns; must be > 0), and the grou
 `outlier_ns` (100 ms), `outlier_samples` (2), `delay_req_clear_ns` (3 s), plus the experimental `cmd_clamp_ppm` (0 = off,
 not in the firmware).
 A jitter object is `{ "kind": "none|uniform|normal|exponential", "scale_ns": x, "clip_sigma": 4 }`.
+`fsync`: `mode` (`off` | `shared` = B | `cascade` = A), `initial_offset_ns` (FSYNC phase vs the GM grid at t = 0; `null` = the
+PHC initial offset), `decimation` (48), `phase_detector` (`wrapped` | `unwrapped`), `cmd_latency_ns` (capture → `NUM` write),
+`capture_noise_ns`, `controller` (`name`, `params`: the second servo, default `pi_time_aware` 20 rad/s), and `pll`: `fref_hz`
+(24 MHz), `vco_hz` (786.432 MHz), `den` (10⁹), `timer_div` (4, B), `fsync_div` (16 384), `step_limit_hz` (200 kHz),
+`step_policy` (`substep` | `cap` | `off`).
 
 Command line: `ptpsim-run run [--config f | --preset default|noisy] [--set key=value …] --out dir`;
 `ptpsim-run compare --out results` (baseline vs variant); `ptpsim-gui [file.json] [--lang en|it]`.
