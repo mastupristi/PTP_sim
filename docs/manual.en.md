@@ -71,19 +71,19 @@ is lost: the simulation, live mode and the zoom state go on unchanged). Changing
 plots detached. Note: the window title bar belongs to the window manager, so it cannot carry a custom button; closing
 the window is the title-bar way back.
 
-**Oscilloscope.** The **Open oscilloscope…** button (Run tab) opens a window that draws two 1 kHz square waves like an
+**Oscilloscope.** The **Open oscilloscope…** button (Run tab) opens a window that draws two square waves (the TDM frame sync, **FSYNC**: 48 kHz by default, selectable 1 / 8 / 48 kHz; changing it keeps the playback position in time and restarts the persistence) like an
 oscilloscope triggered on the rising edge of the Grandmaster wave: the GM trace (yellow) never moves, the slave trace
 (blue) is the square wave locked to the *slave clock*, so its edge sits at minus the true offset (slave ahead → edge to
 the left of the trigger). It shows the **Exploration** result (in live mode it says so). Controls: play/pause (Space),
 rewind (play backwards), start / end, ±1 sweep, a slider to position the playback (the length is the simulated duration;
 nothing is stored per edge: only the slave-clock segments travel with the result, about 1,200 for 300 s (38 kB, 6 % of the result) and 14,000 for one hour (0.46 MB)), a **loop** checkbox, the **speed** (simulated seconds per
-second of playback: 1× = real time = 1000 sweeps per second), the **timebase** (ns/µs per division, or *auto*: the finest
+second of playback: 1× = real time = one sweep per FSYNC period, 48 000 per second at 48 kHz), the **timebase** (ns/µs per division, or *auto*: the finest
 one that still shows the slave edge; it zooms out at once and zooms in only after the offset stayed small for 0.6 s while playing) and the **persistence**, which works as on a real scope: each trigger draws one sweep and a sweep stays on the screen for the persistence time (in simulated time), fading to black over it; where sweeps overlap the trace is brighter (intensity grading), so a drifting edge leaves a trail whose bright part is where the edge dwelt. *off* shows only the latest sweep; **∞** never fades: the sweeps accumulate. Changing the persistence value starts from now, as if nothing had been drawn before, and so does the **reset** button (↻) next to it: it forgets the past. The persistence also restarts when you go back before the reset point or a new result arrives. Under the plot: simulated time, sweep number, the true offset φ and the slave edge. A 1 kHz wave
-cannot show an offset larger than half a period unambiguously: then the picture shows φ modulo 1 ms and a warning says so.
+cannot show an offset larger than half a period unambiguously: then the picture shows φ modulo one period (20.8 µs at 48 kHz) and a warning says so: most of a 100 µs transient wraps around.
 The slave wave is an ideal output of the average-rate clock model (no NXP timer tick, no output jitter).
 
 ![Oscilloscope window](img/gui_scope_en.png)
-*The oscilloscope in the default scenario (100 µs initial offset, 20 ppm) 6 s into the run, persistence 1 s: the slave edge, 46 µs after the GM trigger, is closing in on it (the band to its right is the trail of the earlier sweeps, fading with age).*
+*The oscilloscope in the default scenario (100 µs initial offset, 20 ppm) 11 s into the run at 48 kHz, persistence 1 s: the slave edge, 5.2 µs after the GM trigger, is still settling; the faded band is the trail of the earlier sweeps (the offset came from +10 µs, the picture shows it modulo 20.8 µs).*
 
 * *Delay plot*: the firmware's delay estimate (green) is **held** until the next Delay_Resp is processed, with a dot at
   every sample (so the real sampling rate is visible); the dashed black line is the physical delay of the network.

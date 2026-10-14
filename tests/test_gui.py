@@ -393,7 +393,7 @@ def _scope_result(duration=30.0):
 def test_scope_window_needs_an_explore_result_and_plays_it():
     from ptpsim.gui.scope_window import ScopeWindow
     _ = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    sc = ScopeWindow()
+    sc = ScopeWindow(1000)                                                # 1 kHz: sweeps are ms
     assert not sc.slider.isEnabled() and sc.model is None                # nothing to show yet
     res = _scope_result(30.0)
     sc.set_data(res["scope_bp"], res["t_end"])
@@ -441,7 +441,7 @@ def test_scope_window_needs_an_explore_result_and_plays_it():
 def test_scope_timebase_and_persistence_and_ambiguity_flag():
     from ptpsim.gui.scope_window import ScopeWindow
     _ = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    sc = ScopeWindow()
+    sc = ScopeWindow(1000)                                                # 1 kHz: sweeps are ms
     res = _scope_result(60.0)
     sc.set_data(res["scope_bp"], res["t_end"])
     sc.set_position(1000)                                                 # t = 1 s: the 100 us initial offset is still there
@@ -489,7 +489,7 @@ def test_main_window_feeds_the_scope_and_follows_the_mode():
         assert w.scope_win is None
         w.main_res = _scope_result(20.0)
         w.open_scope()
-        assert w.scope_win.isVisible() and w.scope_win.slider.isEnabled() and w.scope_win.n_max == 20_000
+        assert w.scope_win.isVisible() and w.scope_win.slider.isEnabled() and w.scope_win.n_max == 20 * 48_000      # 48 kHz by default
         w.mode = "live"                                                   # no breakpoints for a live result
         w._push_scope()
         assert not w.scope_win.slider.isEnabled()
@@ -521,7 +521,7 @@ def test_language_change_rebuilds_the_open_scope_window():
 def test_scope_auto_timebase_does_not_jump_while_playing():
     from ptpsim.gui.scope_window import ScopeWindow
     _ = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    sc = ScopeWindow()
+    sc = ScopeWindow(1000)                                                # 1 kHz: sweeps are ms
     res = _scope_result(30.0)
     sc.set_data(res["scope_bp"], res["t_end"])
     sc.set_position(3000)
@@ -561,3 +561,28 @@ def test_language_change_keeps_the_scope_state():
         if w.scope_win is not None:
             w.scope_win.force_close()
         w.close()
+
+
+def test_scope_frequency_selector_keeps_the_position_in_time():
+    from ptpsim.gui.scope_window import ScopeWindow
+    _ = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    sc = ScopeWindow()                                                    # 48 kHz by default
+    assert sc.freq_hz == 48_000 and sc.freq.currentData() == 48_000 and sc.period_ns == pytest.approx(1e9 / 48_000)
+    res = _scope_result(30.0)
+    sc.set_data(res["scope_bp"], res["t_end"])
+    assert sc.n_max == 30 * 48_000
+    sc.set_position(10 * 48_000)                                          # t = 10 s
+    sc.freq.setCurrentIndex(sc.freq.findData(1000))
+    assert sc.freq_hz == 1000 and sc.n_max == 30_000 and sc.pos == 10_000.0 and sc.slider.value() == 10_000
+    assert sc.model.freq_hz == 1000 and sc._p_origin == 10_000            # persistence restarts from here
+    sc.set_frequency(48_000)
+    assert sc.pos == 480_000.0 and sc.model.freq_hz == 48_000
+    info = sc.info.text()
+    assert "t = 10.000 s" in info
+    st = sc.state()
+    sc2 = ScopeWindow(1000)
+    sc2.set_data(res["scope_bp"], res["t_end"])
+    sc2.restore(st)
+    assert sc2.freq_hz == 48_000 and sc2.pos == 480_000.0
+    sc.force_close()
+    sc2.force_close()

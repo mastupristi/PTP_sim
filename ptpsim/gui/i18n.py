@@ -239,9 +239,9 @@ STRINGS: dict[str, dict] = {
     # oscilloscope window
     "g_scope": _s("Oscilloscope", "Oscilloscopio"),
     "scope_btn": _s("Open oscilloscope…", "Apri oscilloscopio…"),
-    "scope_btn_tip": _s("Two 1 kHz square waves, one locked to the GM and one to the slave clock, drawn like an "
+    "scope_btn_tip": _s("Two square waves (FSYNC, 48 kHz by default), one locked to the GM and one to the slave clock, drawn like an "
                         "oscilloscope triggered on the GM rising edge (needs an Exploration result).",
-                        "Due onde quadre a 1 kHz, una sincrona con il GM e una con il clock slave, disegnate come su un "
+                        "Due onde quadre (FSYNC, di default 48 kHz), una sincrona con il GM e una con il clock slave, disegnate come su un "
                         "oscilloscopio con trigger sul fronte di salita del GM (richiede un risultato di Esplorazione)."),
     "scope_title": _s("PTP_sim — oscilloscope", "PTP_sim — oscilloscopio"),
     "scope_na": _s("The oscilloscope shows the Exploration result: switch to Exploration mode.",
@@ -252,14 +252,17 @@ STRINGS: dict[str, dict] = {
     "scope_trig": _s("trigger", "trigger"),
     "scope_loop": _s("loop", "ripeti"),
     "scope_speed": _s("speed", "velocità"),
-    "scope_speed_tip": _s("Simulated seconds per second of playback (1× = real time: 1000 sweeps per second).",
-                          "Secondi simulati per secondo di riproduzione (1× = tempo reale: 1000 scansioni al secondo)."),
+    "scope_speed_tip": _s("Simulated seconds per second of playback (1× = real time: one sweep per wave period).",
+                          "Secondi simulati per secondo di riproduzione (1× = tempo reale: una scansione per periodo dell'onda)."),
     "scope_timebase": _s("timebase", "base dei tempi"),
     "scope_tb_auto": _s("auto", "auto"),
     "scope_tb_tip": _s("Time per division (10 divisions, trigger in the centre). Auto picks the finest one that shows "
                        "the slave edge.",
                        "Tempo per divisione (10 divisioni, trigger al centro). Auto sceglie la più fine che mostra il "
                        "fronte dello slave."),
+    "scope_freq": _s("FSYNC", "FSYNC"),
+    "scope_freq_tip": _s("Frequency of the two waves (TDM frame sync). The playback keeps its position in time.",
+                         "Frequenza delle due onde (frame sync TDM). La riproduzione mantiene la posizione nel tempo."),
     "scope_persist": _s("persistence", "persistenza"),
     "scope_persist_off": _s("off", "off"),
     "scope_persist_tip": _s("How long a sweep stays on the screen, in simulated time (as on a scope: persistence off = only "

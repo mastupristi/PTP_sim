@@ -71,20 +71,20 @@ invariati). Cambiando lingua da staccati i grafici restano staccati. Nota: la ba
 manager e non può avere un pulsante personalizzato; la chiusura della finestra è la via di ritorno dalla barra del titolo.
 
 **Oscilloscopio.** Il pulsante **Apri oscilloscopio…** (scheda Esecuzione) apre una finestra che disegna due onde quadre a
-1 kHz come su un oscilloscopio con trigger sul fronte di salita dell'onda del Grandmaster: la traccia GM (gialla) non si
+(il frame sync TDM, **FSYNC**: di default 48 kHz, selezionabile 1 / 8 / 48 kHz; cambiandolo la riproduzione mantiene la posizione nel tempo e la persistenza riparte) come su un oscilloscopio con trigger sul fronte di salita dell'onda del Grandmaster: la traccia GM (gialla) non si
 muove mai, quella dello slave (azzurra) è l'onda quadra sincrona con il *clock slave*, quindi il suo fronte sta a meno
 l'offset reale (slave in anticipo → fronte a sinistra del trigger). Mostra il risultato dell'**Esplorazione** (in
 modalità live lo dice). Controlli: play/pausa (Spazio), rewind (riproduzione all'indietro), inizio / fine, ±1
 scansione, uno slider per posizionare la riproduzione (la lunghezza è la durata simulata; non si memorizza nulla per
 fronte: col risultato viaggiano solo i segmenti del clock slave, circa 1.200 per 300 s (38 kB, il 6 % del risultato) e 14.000 per un'ora (0,46 MB)), la casella **ripeti**, la **velocità** (secondi simulati
-per secondo di riproduzione: 1× = tempo reale = 1000 scansioni al secondo), la **base dei tempi** (ns/µs per divisione,
+per secondo di riproduzione: 1× = tempo reale = una scansione per periodo di FSYNC, 48 000 al secondo a 48 kHz), la **base dei tempi** (ns/µs per divisione,
 oppure *auto*: la più fine che mostra ancora il fronte dello slave; allarga subito e stringe solo dopo che l'offset è rimasto piccolo per 0,6 s durante la riproduzione) e la **persistenza**, che funziona come in un oscilloscopio vero: a ogni trigger si disegna una scansione e questa resta a schermo per il tempo di persistenza (tempo simulato), sfumando fino al nero; dove le scansioni si sovrappongono la traccia è più luminosa (gradazione di intensità), quindi un fronte che deriva lascia una scia più brillante dove si è fermato di più. *off* mostra solo l'ultima scansione; **∞** non sfuma mai: le scansioni si accumulano. Cambiando il valore di persistenza si riparte da ora, come se prima non fosse stato disegnato nulla, e lo stesso fa il pulsante di **azzeramento** (↻) accanto: dimentica il passato. La persistenza riparte anche se torni indietro prima del punto di azzeramento o arriva un nuovo risultato. Sotto il grafico: tempo simulato, numero di scansione, offset reale
-φ e fronte dello slave. Un'onda a 1 kHz non può mostrare senza ambiguità un offset maggiore di mezzo periodo: in quel caso
-il disegno mostra φ modulo 1 ms e un avviso lo dice. L'onda dello slave è un'uscita ideale del modello a rate medio del
+φ e fronte dello slave. Un'onda quadra non può mostrare senza ambiguità un offset maggiore di mezzo periodo: in quel caso
+il disegno mostra φ modulo un periodo (20,8 µs a 48 kHz) e un avviso lo dice: gran parte di un transitorio da 100 µs risulta avvolta. L'onda dello slave è un'uscita ideale del modello a rate medio del
 clock (niente tick del timer NXP, niente jitter sull'uscita).
 
 ![Finestra dell'oscilloscopio](img/gui_scope_it.png)
-*L'oscilloscopio nello scenario di default (offset iniziale 100 µs, 20 ppm) a 6 s dall'inizio, persistenza 1 s: il fronte dello slave, 46 µs dopo il trigger del GM, si sta avvicinando (la banda alla sua destra è la scia delle scansioni precedenti, che sfumano con l'età).*
+*L'oscilloscopio nello scenario di default (offset iniziale 100 µs, 20 ppm) a 11 s dall'inizio a 48 kHz, persistenza 1 s: il fronte dello slave, 5,2 µs dopo il trigger del GM, si sta ancora assestando; la banda sfumata è la scia delle scansioni precedenti (l'offset veniva da +10 µs, il disegno lo mostra modulo 20,8 µs).*
 
 * *Grafico Delay*: la stima del delay del firmware (verde) è **tenuta** fino all'elaborazione della Delay_Resp successiva, con un
   punto a ogni campione (così si vede la frequenza reale dei campioni); la linea nera tratteggiata è il delay fisico della rete.

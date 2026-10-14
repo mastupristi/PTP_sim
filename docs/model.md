@@ -229,12 +229,12 @@ See the README and the docstring of `ptpsim/metrics.py` for the exact definition
 
 ## 7b. Oscilloscope view (`ptpsim/scope.py`)
 
-Two ideal square waves at 1 kHz (50 %): the GM one has its rising edges at `k·P` of the physical time; the slave one
+Two ideal square waves (50 %) at the TDM frame-sync frequency, 48 kHz by default (`P` = 20 833.33 ns, not an integer number of ns; also 1 and 8 kHz): the GM one has its rising edges at `k·P` of the physical time, i.e. at `round(k·10¹²/f)` ps; the slave one
 has them whenever the *slave clock reads* `k·P`. The scope triggers on the GM edge, so a sweep shows the slave edge at
 `d` with `d·(1 + slope) = −A`, where `A` is the phase of the slave-clock segment containing the edge, extrapolated to the
 trigger and reduced to `[−P/2, P/2)`. The solve is exact (a bisect on the segment breakpoints, repeated if the edge falls in
 the next segment); the first-order `d = −φ` is wrong by `slope·φ` (2.4 ns at 20 ppm and 120 µs). The integer part of the
-phase (a PHC at 0 against a 1.7e18 ns epoch) is reduced modulo `P` *as an integer* before the float part is added, so
+phase (a PHC at 0 against a 1.7e18 ns epoch) is reduced modulo `P` *as an integer* (`big mod 10⁹/f = ((big·f) mod 10⁹)/f`, Python ints for a huge offset) before the float part is added; the rounding of the trigger instant to the ps (≤ 0.5 ps) is carried into the solve, so the slave edge is relative to the exact `k·P`, so
 the picture keeps ns resolution. When `|φ| > P/2` the wave only shows `φ mod P` (the sweep is flagged `ambiguous`).
 Nothing is stored per edge: any sweep of the run is computed on demand, so the playback length is the simulated duration. The result carries the slave-clock segments (int64 anchors, integer and float phase, slope): 1,189 segments for the default 300 s run (38 kB of 610 kB), 14,389 for 3,600 s (0.46 MB of 2.5 MB); building the model takes 0.06–0.3 ms; a frame with persistence (up to 2,000 sweeps, vectorised) takes ≈ 11 ms including the offscreen repaint, 4.5 ms without persistence (1400×800 window, 300 s run).
 

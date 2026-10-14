@@ -14,8 +14,8 @@ P = 1_000_000                      # ns
 PS_S = 10**12
 
 
-def model(clock):
-    return ScopeModel.from_clock(clock)
+def model(clock, freq_hz=1000):
+    return ScopeModel.from_clock(clock, freq_hz=freq_hz)
 
 
 def test_identical_clocks_edges_coincide():
@@ -88,7 +88,7 @@ def test_from_simulation_result_tracks_the_true_offset():
     sim = Simulation(cfg)
     sim.run_until(60.0)
     res = sim.result()
-    m = ScopeModel.from_clock(res.clock)
+    m = ScopeModel.from_clock(res.clock, freq_hz=1000)
     for t in (1.0, 10.0, 30.0, 59.999):
         sw = m.sweep_at(t)
         assert abs(sw.phi_ns - res.true_offset_ns(np.array([sw.t_s]))[0]) < 1e-3
@@ -173,3 +173,53 @@ def test_edge_profile_matches_the_square_wave_away_from_the_edges():
 def test_phosphor_saturates_and_grows_with_overlap():
     v = phosphor([0.0, 1.0, 2.0, 10.0, 1e9])
     assert v[0] == 0.0 and v[-1] == pytest.approx(1.0) and (np.diff(v) > 0).all() and v[1] < 0.5
+
+
+# ---------------------------------------------------------------------- 48 kHz: a period that is not an integer number of ns
+P48 = 1e9 / 48_000                                                   # 20 833.33... ns
+
+
+def test_48khz_triggers_are_rounded_to_the_ps_and_the_edge_is_relative_to_the_exact_instant():
+    m = model(SlaveClock(0.0, 0.0), 48_000)
+    assert m.period_ns == P48
+    assert [m.trigger_ps(k) for k in (0, 1, 2, 3, 48_000)] == [0, 20_833_333, 41_666_667, 62_500_000, 10**12]
+    assert np.array_equal(m.trigger_ps(np.array([0, 1, 2, 3, 48_000])), [0, 20_833_333, 41_666_667, 62_500_000, 10**12])
+    for k in (1, 2, 7, 12_345, 14_400_000):
+        sw = m.sweep(k)
+        assert sw.edge_ns == 0.0 and sw.phi_ns == 0.0 and not sw.ambiguous      # identical clocks: edges coincide
+    assert model(SlaveClock(+200.0, 0.0), 48_000).sweep(7).edge_ns == pytest.approx(-200.0, abs=1e-6)
+    assert model(SlaveClock(-350.0, 0.0), 48_000).sweep(7).edge_ns == pytest.approx(+350.0, abs=1e-6)
+
+
+def test_48khz_offset_larger_than_half_a_period_is_wrapped():
+    sw = model(SlaveClock(15_000.0, 0.0), 48_000).sweep(5)                     # 15 us ahead = 5.83 us behind
+    assert sw.ambiguous and sw.edge_ns == pytest.approx(P48 - 15_000.0, abs=1e-6)
+    assert not model(SlaveClock(10_000.0, 0.0), 48_000).sweep(5).ambiguous      # 10 us < P/2 = 10.4 us
+
+
+def test_48khz_huge_offset_is_reduced_with_integer_arithmetic():
+    big = -1_700_000_000_123_456_789
+    c = SlaveClock(0.0, 0.0)
+    c.step(1, big)
+    sw = model(c, 48_000).sweep(5)
+    # phi mod P with P = 1e9/48000 ns: ((big * 48000) mod 1e9) / 48000, wrapped to [-P/2, P/2)
+    r = ((big * 48_000) % 10**9) / 48_000
+    expected = -(((r + P48 / 2) % P48) - P48 / 2)
+    assert sw.ambiguous and sw.edge_ns == pytest.approx(expected, abs=1e-6)
+
+
+def test_48khz_exact_solve_and_vectorised_sweeps():
+    c = SlaveClock(5_000.0, 20e-6)                                              # 5 us ahead, 20 ppm fast
+    for t_ps, slope in ((5 * PS_S, -35e-6), (12 * PS_S, 5e-6)):
+        c.set_slope(t_ps, slope)
+    c.step(20 * PS_S, 700.0)
+    m = model(c, 48_000)
+    ks = [3, 239_999, 240_000, 240_001, 575_999, 576_005, 959_999, 960_001, 3_000_000, 14_399_999]
+    edge, half, phi = m.sweeps(np.array(ks))
+    for i, k in enumerate(ks):
+        sw = m.sweep(k)
+        assert (sw.edge_ns, sw.half_ns, sw.phi_ns) == (edge[i], half[i], phi[i]), k
+        if not sw.ambiguous:                       # the slave clock reads k * P at the edge instant
+            t_exact_ps = k * 1e12 / 48_000
+            reading_ns = (t_exact_ps + sw.edge_ns * 1000) / 1000 + c.phi_hist_ns(int(round(t_exact_ps + sw.edge_ns * 1000)))
+            assert abs(reading_ns - k * P48) < 0.003

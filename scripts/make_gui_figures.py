@@ -48,10 +48,10 @@ SCENES = {
     "zoom": dict(cfg={"duration_s": 90.0, "intervals.sync_log": -4, "oscillator.initial_offset_ns": 100e3,
                       "oscillator.freq_error_ppb": 0.0, "controller.name": "pi_per_second",
                       "controller.params": {"kp": 0.7, "ki": 0.3}}, overlay=True, zoom=True),
-    # oscilloscope window (the screenshot is the scope, not the main window): mid-transient, 1 s of persistence
+    # oscilloscope window (the screenshot is the scope, not the main window): end of the transient, 1 s of persistence
     "scope": dict(cfg={"duration_s": 60.0, "intervals.sync_log": -2, "oscillator.initial_offset_ns": 100e3,
                        "oscillator.freq_error_ppb": 20000.0, "controller.name": "baseline_pi",
-                       "controller.params": {"kp": 0.7, "ki": 0.3}}, scope=dict(t_s=6.0, persist_s=1.0)),
+                       "controller.params": {"kp": 0.7, "ki": 0.3}}, scope=dict(t_s=11.0, persist_s=1.0)),
     # recipe "Live tuning": kp raised while the run is going, change marked on the plots
     "live": dict(cfg={"duration_s": 120.0, "intervals.sync_log": -2, "oscillator.initial_offset_ns": 100e3,
                       "oscillator.freq_error_ppb": 20000.0, "controller.name": "baseline_pi",

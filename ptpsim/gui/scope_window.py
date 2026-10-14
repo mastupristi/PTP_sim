@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Oscilloscope window: the GM and the slave 1 kHz square waves, triggered on the GM rising edge.
+"""Oscilloscope window: the GM and the slave FSYNC square waves (48 kHz by default), triggered on the GM rising edge.
 
 Everything is computed on demand from the exact slave-clock breakpoints (``ptpsim.scope``): the position of the
 playback is just a sweep number, the maths does not depend on the playback speed, and nothing is stored per edge, so the
@@ -13,7 +13,7 @@ import numpy as np
 import pyqtgraph as pg
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ..scope import (DEFAULT_PERIOD_NS, ScopeModel, edge_profile, persistence_samples, phosphor, pick_timebase_ns,
+from ..scope import (DEFAULT_FSYNC_HZ, ScopeModel, edge_profile, persistence_samples, phosphor, pick_timebase_ns,
                      square_xy)
 from .i18n import T
 
@@ -21,6 +21,7 @@ C_GM, C_SLAVE = "#F0E442", "#56B4E9"               # Okabe-Ito yellow / sky blue
 GM_LEVELS, SLAVE_LEVELS = (2.0, 3.0), (0.0, 1.0)
 TIMEBASES_NS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1e3, 2e3, 5e3, 1e4, 2e4, 5e4, 1e5, 2e5]     # per division
 SPEEDS = [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]                                          # simulated s / wall s
+FSYNC_HZ = [1_000, 8_000, 48_000]                    # selectable wave frequency (TDM frame syncs)
 PERSIST_S = [0.0, 0.01, 0.1, 1.0, 10.0, 60.0, float('inf')]        # simulated time; inf = infinite persistence
 DIVISIONS = 5                                        # per side of the trigger
 N_SWEEPS = 2000                                      # most sweeps accumulated per frame (a longer window is thinned)
@@ -50,9 +51,11 @@ def fmt_tb(ns: float) -> str:
 class ScopeWindow(QtWidgets.QWidget):
     """Top-level window; closing it only hides it (the playback stops, the data stay)."""
 
-    def __init__(self, period_ns: int = DEFAULT_PERIOD_NS):
+    def __init__(self, freq_hz: int = DEFAULT_FSYNC_HZ):
         super().__init__(None, QtCore.Qt.Window)
-        self.period_ns = int(period_ns)
+        self.freq_hz = int(freq_hz)
+        self.period_ns = 1e9 / self.freq_hz
+        self._bp: dict | None = None                 # slave-clock segments of the result shown
         self.model: ScopeModel | None = None
         self.n_max = 0
         self.pos = 0.0                               # playback position in sweeps (float while playing)
@@ -142,6 +145,14 @@ class ScopeWindow(QtWidgets.QWidget):
         self.chk_loop = QtWidgets.QCheckBox(T("scope_loop"))
         tr.addWidget(self.chk_loop)
         tr.addStretch(1)
+        tr.addWidget(QtWidgets.QLabel(T("scope_freq")))
+        self.freq = QtWidgets.QComboBox()
+        for hz in FSYNC_HZ:
+            self.freq.addItem(f"{hz / 1e3:g} kHz", hz)
+        self.freq.setCurrentIndex(FSYNC_HZ.index(self.freq_hz) if self.freq_hz in FSYNC_HZ else FSYNC_HZ.index(DEFAULT_FSYNC_HZ))
+        self.freq.setToolTip(T("scope_freq_tip"))
+        self.freq.currentIndexChanged.connect(lambda *_: self.set_frequency(self.freq.currentData()))
+        tr.addWidget(self.freq)
         tr.addWidget(QtWidgets.QLabel(T("scope_speed")))
         self.speed = QtWidgets.QComboBox()
         for s in SPEEDS:
@@ -205,7 +216,7 @@ class ScopeWindow(QtWidgets.QWidget):
 
     def _set_enabled(self, on: bool):
         for w in (self.btn_start, self.btn_rev, self.btn_back, self.btn_play, self.btn_fwd, self.btn_end,
-                  self.slider, self.speed, self.tb, self.persist, self.btn_pclear, self.chk_loop):
+                  self.slider, self.speed, self.freq, self.tb, self.persist, self.btn_pclear, self.chk_loop):
             w.setEnabled(on)
         self.notice.setVisible(not on)
         self.pw.setVisible(on)
@@ -218,19 +229,40 @@ class ScopeWindow(QtWidgets.QWidget):
         if bp is None:
             self.set_direction(0)
             self.model = None
+            self._bp = None
             self.n_max = 0
             self._set_enabled(False)
             return
-        self.model = ScopeModel.from_dict(bp, self.period_ns)
+        self._bp = bp
+        self.model = ScopeModel.from_dict(bp, self.freq_hz)
         self._p_origin = int(round(self.pos))
         self._acc = None
-        self.n_max = int(t_end_s * 1e9 / self.period_ns)
+        self.n_max = int(t_end_s * self.freq_hz)
         self.pos = min(self.pos, float(self.n_max))
         self.slider.blockSignals(True)
         self.slider.setRange(0, self.n_max)
         self.slider.blockSignals(False)
         self._t_end = t_end_s
         self._set_enabled(True)
+        self._sync_slider()
+        self._draw()
+
+    def set_frequency(self, hz: int) -> None:
+        """Wave frequency: the playback keeps its position in *time*, the sweep number is rescaled."""
+        hz = int(hz)
+        if hz == self.freq_hz:
+            return
+        t = self.pos / self.freq_hz
+        self.freq_hz, self.period_ns = hz, 1e9 / hz
+        self.freq.blockSignals(True)
+        self.freq.setCurrentIndex(self.freq.findData(hz))
+        self.freq.blockSignals(False)
+        self._p_origin = 0
+        self._acc = None
+        if self._bp is not None:
+            self.set_data(self._bp, self._t_end)
+        self.pos = float(min(max(round(t * hz), 0), self.n_max))
+        self._p_origin = int(round(self.pos))
         self._sync_slider()
         self._draw()
 
@@ -416,11 +448,12 @@ class ScopeWindow(QtWidgets.QWidget):
     # ------------------------------------------------------------------ state (kept over a language change)
     def state(self) -> dict:
         return {"pos": self.pos, "speed": self.speed.currentIndex(), "tb": self.tb.currentIndex(),
-                "persist": self.persist.currentIndex(), "p_origin": self._p_origin, "loop": self.chk_loop.isChecked(),
+                "freq": self.freq.currentData(), "persist": self.persist.currentIndex(), "p_origin": self._p_origin, "loop": self.chk_loop.isChecked(),
                 "geometry": self.saveGeometry()}
 
     def restore(self, st: dict) -> None:
         self.speed.setCurrentIndex(st["speed"])
+        self.set_frequency(st["freq"])
         self.tb.setCurrentIndex(st["tb"])
         self.persist.setCurrentIndex(st["persist"])
         self.chk_loop.setChecked(st["loop"])
