@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import bisect
 import math
+from array import array
 from fractions import Fraction
 
 import numpy as np
@@ -72,6 +73,11 @@ class FsyncServo:
         self._eps_i = 0                           # index of the crystal error in force
         self._eps = None
         self.clock = SlaveClock(psi0, 0.0, 0)     # slope set at the first advance (needs the crystal history)
+        if abs(psi0) >= SlaveClock._BIG:
+            raise ValueError("fsync initial offset too large")
+        # one segment per NUM write (3.6 M for an hour at 1 ms): compact arrays instead of lists of Python objects
+        c = self.clock
+        c._t0, c._big, c._phi0, c._slope = array("q", c._t0), array("q", c._big), array("d", c._phi0), array("d", c._slope)
         # first rising edge after t = 0: F(0) = psi0 (ns) -> k = floor(psi0 / P) + 1
         self.k_next = int(math.floor(psi0 * 1000 * self._pd / self._pn)) + 1
         self._pending: list[tuple[int, int]] = []  # (t_ps, NUM) writes not yet in force
@@ -80,14 +86,14 @@ class FsyncServo:
         self.n_updates = 0
         self.index = 0
         self.t_done = 0
-        # records (one per update)
-        self.r_t: list[float] = []
-        self.r_off: list[int] = []                # offset seen by the servo (ns)
-        self.r_cmd: list[float] = []              # controller output (ppb)
-        self.r_num: list[int] = []                # NUM requested
-        self.r_psi: list[float] = []              # true FSYNC phase vs the GM grid at the edge (ns, unwrapped)
-        self.r_rate: list[float] = []             # true FSYNC rate error vs GM at the edge (ppb)
-        self.r_phc: list[float] = []              # true PHC offset at the edge (ns)
+        # records (one per update), compact arrays
+        self.r_t = array("d")                     # physical instant of the captured edge (s)
+        self.r_off = array("q")                   # offset seen by the servo (ns)
+        self.r_cmd = array("d")                   # controller output (ppb)
+        self.r_num = array("q")                   # NUM requested
+        self.r_psi = array("d")                   # true FSYNC phase vs the GM grid at the edge (ns, unwrapped)
+        self.r_rate = array("d")                  # true FSYNC rate error vs GM at the edge (ppb)
+        self.r_phc = array("d")                   # true PHC offset at the edge (ns)
 
     # ------------------------------------------------------------------ helpers
     def _slope(self) -> float:
@@ -226,8 +232,8 @@ class FsyncServo:
         self.t_done = t_end_ps
 
     def result(self) -> dict:
-        f = np.array
-        return {"t_s": f(self.r_t), "offset_ns": f(self.r_off, dtype=np.float64), "cmd_ppb": f(self.r_cmd),
-                "num": f(self.r_num, dtype=np.int64), "psi_ns": f(self.r_psi), "rate_ppb": f(self.r_rate),
-                "phc_offset_ns": f(self.r_phc), "freq_hz": self.freq_hz, "decimation": self.M,
+        f = lambda a, dt: np.frombuffer(a, dtype=dt).copy() if len(a) else np.empty(0, dtype=dt)
+        return {"t_s": f(self.r_t, np.float64), "offset_ns": f(self.r_off, np.int64).astype(np.float64),
+                "cmd_ppb": f(self.r_cmd, np.float64), "num": f(self.r_num, np.int64), "psi_ns": f(self.r_psi, np.float64),
+                "rate_ppb": f(self.r_rate, np.float64), "phc_offset_ns": f(self.r_phc, np.float64), "freq_hz": self.freq_hz, "decimation": self.M,
                 "num0": self.pll.num0, "lsb_ppb": self.pll.lsb_ppb, "n_updates": self.n_updates}

@@ -136,11 +136,14 @@ class FsyncConfig:
     mode: str = "off"
     initial_offset_ns: float | None = None   # FSYNC phase vs the GM grid at t = 0 (None = the PHC initial offset)
     decimation: int = 48                 # cascade: one servo-2 update every this many FSYNC edges
-    phase_detector: str = "wrapped"      # cascade: wrapped (edge vs the PHC grid, modulo the period) | unwrapped
+    phase_detector: str = "unwrapped"    # cascade: unwrapped (grid anchored on the first edge: FSYNC follows PTP steps
+                                         # too) | wrapped (edge vs the PHC grid modulo the period: re-aligns within P/2)
     cmd_latency_ns: float = 0.0          # cascade: capture -> NUM write
     capture_noise_ns: float = 0.0        # cascade: noise of the edge timestamps (on top of the timer tick)
+    # second servo: its command limit sits inside the NUM range (-9 304 / +23 464 ppm at 786.432 MHz), otherwise the
+    # controller would wind up while NUM is clamped
     controller: ControllerConfig = field(default_factory=lambda: ControllerConfig(
-        "pi_time_aware", {"wn": 20.0, "zeta": 1.0}))
+        "pi_time_aware", {"wn": 20.0, "zeta": 1.0, "sat_ppb": 9_000_000.0}))
     pll: PllConfig = field(default_factory=PllConfig)
 
 

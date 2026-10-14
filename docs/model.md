@@ -282,27 +282,53 @@ from the Audio PLL; every `fsync.decimation` edges (48 = 1 ms, 480 = 10 ms) its 
 writes `NUM`. FSYNC → PHC → GM. The PHC does not depend on FSYNC, so the second servo runs **after** the PTP loop on the PHC
 history (exact historical reads with the integer `big` part, plus the crystal-error history, which FSYNC shares with the
 PHC; `oscillator.timer_error_ppb` is the k_timer's and does not reach it); it is incremental, so a run chunked in time gives
-the same arrays. Phase detector: `wrapped` (default) — distance of the timestamp from the nearest point of the PHC grid
-`k·P`, in `[−P/2, P/2)`, exact rational arithmetic; after a PTP step FSYNC re-aligns within half a period (it does not slew
-the step); `unwrapped` — from the grid anchored on the first captured edge (slews the whole step). Offset convention as for
-the PTP servo (`FSYNC − PHC`, > 0 = early); `dt` measured from the timestamps; default controller `pi_time_aware` with
-`wn` = 20 rad/s, `zeta` = 1 (any controller of §6 can be configured in `fsync.controller`). Measured (default scenario,
-ideal PTP actuator, 1 ms, 120 s, last 60 s): FSYNC frequency error vs GM mean +0.008 ppb, RMS 1.667 ppb (it follows the PHC's
-rate, which moves at every PTP update); FSYNC − PHC grid RMS 0.89 ns, max 1.33 ns. With a locked PHC the wrapped detector also
-puts FSYNC on the GM grid (modulo the period), under the assumption that the GM's FSYNC edges are at `k·P` of its time.
+the same arrays. Phase detector: `unwrapped` (default: the second servo starts at once and follows the PTP steps too, as
+asked) — distance of the timestamp from the PHC grid anchored on the first captured edge, so after a PTP step FSYNC slews
+the whole step; `wrapped` — distance from the nearest point of the PHC grid `k·P`, in `[−P/2, P/2)`, exact rational
+arithmetic: after a step FSYNC re-aligns within half a period instead, and with a locked PHC it also sits on the GM grid
+(modulo the period, assuming the GM's FSYNC edges are at `k·P` of its time). Offset convention as for the PTP servo
+(`FSYNC − PHC`, > 0 = early); `dt` measured from the timestamps; default controller `pi_time_aware` with `wn` = 20 rad/s,
+`zeta` = 1 and `sat_ppb` = 9 000 ppm — inside the `NUM` range (−9 304 ppm), so while a 5 ms step is slewed the integrator
+is frozen by the controller's own saturation instead of winding up against a clamped `NUM` (test: overshoot < 5 µs). Any
+controller of §6 can be configured in `fsync.controller`.
 
-**Cost.** The second servo is a plain loop outside the event heap: 6.4 µs per update (Python), i.e. 1.9 s for 300 s at 1 ms
-(300 000 updates) and 0.19 s at 10 ms, against 29–43 ms for the PTP loop itself: at 1 ms the 200 ms GUI target of the
-default scenario is **not** met (the GUI shows the time; Numba or compiled code would be the next step, not done). The FSYNC
-segments sent to the oscilloscope are one per write (300 001 for 300 s at 1 ms); the plots get at most 60 000 servo-2 samples
-(rendering only; the metrics use all of them).
+Measured (default scenario, 1 ms unless stated, 120 s, last 60 s; `bench`-like script, one run per row):
+
+| PTP timer | decimation | FSYNC freq. error vs GM mean [ppb] | RMS [ppb] | FSYNC − PHC grid RMS / max [ns] |
+|---|---|---|---|---|
+| ideal (whole-ns timestamps) | 48 | +0.008 | 1.667 | 0.37 / 0.67 |
+| ideal | 49 | +0.001 | 2.005 | 0.20 / 0.34 |
+| ideal | 480 | +0.004 | 5.525 | 0.34 / 0.69 |
+| NXP 100 MHz (10 ns tick) | 48 | +0.056 | 13.765 | 3.89 / 6.67 |
+| NXP 100 MHz | 49 | −0.053 | 99.126 | 2.08 / 3.46 |
+| NXP 100 MHz | 480 | −0.029 | 29.815 | 3.14 / 6.94 |
+| NXP 200 MHz (5 ns tick) | 48 | −0.067 | 7.031 | 1.89 / 3.34 |
+| NXP 200 MHz | 49 | −0.049 | 65.800 | 1.00 / 1.75 |
+| NXP 200 MHz | 480 | −0.046 | 16.898 | 1.28 / 3.49 |
+
+The mean frequency error is ≈ 0 everywhere; the RMS follows the PHC's own rate, which moves at every PTP update, plus the
+servo-2 reaction to the timestamp quantisation. One FSYNC period is 2083⅓ ticks at 100 MHz (4166⅔ at 200 MHz): with a
+decimation that is a multiple of 3 (48, 480) every capture sits at the same fractional-tick phase, the quantisation error is
+constant and acts as a dead zone (phase error up to about one tick, quiet frequency); with 49 it dithers sample by sample:
+better phase (≈ half), but the 20 rad/s servo reacts to every tick jump (99 ppb RMS at 100 MHz). The choice of decimation
+and `wn` against the tick is a real trade-off of architecture A.
+
+**Cost.** The second servo is a plain loop outside the event heap: 6.4 µs per update (Python), i.e. ≈ 2 s for 300 s at 1 ms
+(300 000 updates) and 0.2 s at 10 ms, against 29–43 ms for the PTP loop itself: at 1 ms the 200 ms GUI target of the
+default scenario is **not** met (the GUI shows the time; Numba or compiled code would be the next step, not done). The
+worker runs it chunk by chunk (20 s of simulated time), so a run stays cancellable. Records and FSYNC segments are compact
+arrays; measured for 3 600 s at 1 ms (3.6 M updates): 24.5 s, peak RSS 828 MB, 121 MB of result to the GUI (the FSYNC
+segments for the oscilloscope, one per write); at 10 ms: 2.9 s, 136 MB, 17 MB. The plots get at most 60 000 servo-2 samples
+(rendering only; the metrics and the CSV export use all of them). The baseline overlay does not run the FSYNC servo.
 
 **Not modelled.** PLL output jitter and fractional spurs (no figures in the RM; the edge-jitter option is the timestamp
 noise), `DITHER_EN`, spread spectrum, the AI-interface write latency (use `fsync.cmd_latency_ns`), the counter staircase of
-the ENET timer (§5). FSYNC plots and the FSYNC oscilloscope channel are for Exploration results only.
+the ENET timer (§5). FSYNC plots and the FSYNC oscilloscope channel are for Exploration results only (the FSYNC controls are
+disabled in live mode). Export: `fsync_phase.csv`, `fsync_rate.csv`, `fsync_servo.csv`.
 Tests: `tests/test_pll.py` (representability, ppb→`NUM`, range, step policies), `tests/test_fsync.py` (B: residual, no step
 of FSYNC, range rejection, 200 kHz steps one lock time apart, policies; A: FSYNC on the PHC and GM grids, decimation, wrapped vs
-unwrapped after a step, incremental = one-shot, PTP loop bit-identical, own noise stream, tick quantisation).
+unwrapped after a step, no windup against the `NUM` range, incremental = one-shot, PTP loop bit-identical, own noise stream,
+tick quantisation, overlay without FSYNC, CSV export).
 
 ## 8. Test matrix (CLAUDE.md §10 → tests)
 

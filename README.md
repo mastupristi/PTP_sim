@@ -27,7 +27,7 @@ ptpsim-gui [scenario.json] [--lang en|it]   # interactive GUI (English default, 
 ptpsim-run run --config configs/default_deterministic.json --out results/run   # headless + CSV
 ptpsim-run run --preset noisy --set intervals.sync_log=-3 --set seed=5 --out results/run_noisy
 ptpsim-run compare --out results      # baseline vs variant, writes results/comparison.{csv,md}
-pytest                                # 206 tests (the C-reference tests need gcc, the GUI tests Qt)
+pytest                                # 209 tests (the C-reference tests need gcc, the GUI tests Qt)
 python bench/benchmark.py             # engine benchmark   (bench/gui_latency.py: GUI reactivity)
 ```
 
@@ -215,8 +215,10 @@ The follower's 48 kHz FSYNC can be modelled (Actuator tab → *FSYNC*; `fsync` i
 **B** — PTP timer (VCO/4 = 196.608 MHz) and FSYNC from the same PLL, the PTP servo trims `NUM`; **A** — FSYNC from the PLL,
 a second servo trims it from the PTP timestamps of its edges every 48 (1 ms) or 480 (10 ms) edges. Measured: in B the PHC
 locks but FSYNC stays **+204.5 ppb** fast, the residual of the timer correction programmed for ratio 1 at 196.608 MHz, which the
-PLL compensates for the PHC and FSYNC does not have; in A FSYNC follows the PHC (mean +0.008 ppb, RMS 1.7 ppb vs GM; 0.9 ns RMS
-vs the PHC grid). A at 1 ms costs 1.9 s per 300 s (Python loop), over the 200 ms target. Details: [docs/model.md](docs/model.md) §7c.
+PLL compensates for the PHC and FSYNC does not have; in A FSYNC follows the PHC (mean ≈ 0 ppb; RMS 1.7 ppb vs GM and 0.37 ns
+vs the PHC grid with an ideal PTP timer, 7–14 ppb and 1.9–3.9 ns with the NXP timer at 200/100 MHz, where the decimation
+against the tick is a trade-off). A at 1 ms costs ≈ 2 s per 300 s (Python loop), over the 200 ms target. Details:
+[docs/model.md](docs/model.md) §7c.
 
 ## Metrics (definitions)
 

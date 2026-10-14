@@ -46,6 +46,8 @@ def export_result(res: SimResult, out_dir: str | Path, dense_dt_s: float = 0.01,
         w.writerow(["t_s", "cmd_ppb", "effective_rate_error_ppb"])
         for a, b, c in zip(res.rate_t_s, res.rate_cmd_ppb, res.rate_eff_ppb):
             w.writerow([f"{a:.9f}", f"{b:.6f}", f"{c:.6f}"])
+    if res.fsync_clock is not None:
+        _export_fsync(res, out, t)
     with open(out / "events.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["t_s", "event", "detail"])
@@ -54,6 +56,30 @@ def export_result(res: SimResult, out_dir: str | Path, dense_dt_s: float = 0.01,
         for t_, d in res.changes:
             w.writerow([f"{t_:.9f}", "parameter_change", d])
     return out
+
+
+def _export_fsync(res: SimResult, out: Path, t: np.ndarray) -> None:
+    """FSYNC: true phase vs the GM and the PHC grids on the dense grid (wrapped to one period, and unwrapped vs GM), its
+    rate segments, and (cascade) every second-servo update."""
+    p = res.cfg.fsync.pll
+    per = 1e9 * p.fsync_div / p.vco_hz
+    t_ps = np.round(t * 1e12).astype(np.int64)
+    psi = res.fsync_clock.sample_ns(t_ps)
+    phc = res.clock.sample_ns(t_ps)
+    wrap = lambda x: (x + per / 2) % per - per / 2
+    np.savetxt(out / "fsync_phase.csv", np.column_stack([t, psi, wrap(psi), wrap(psi - phc)]), delimiter=",",
+               header="t_s,fsync_minus_gm_ns,fsync_minus_gm_wrapped_ns,fsync_minus_phc_wrapped_ns", comments="",
+               fmt=["%.6f", "%.4f", "%.4f", "%.4f"])
+    t0, _, sl = res.fsync_clock.breakpoints()
+    np.savetxt(out / "fsync_rate.csv", np.column_stack([t0 / 1e12, sl * 1e9]), delimiter=",",
+               header="t_s,fsync_rate_error_ppb", comments="", fmt=["%.12f", "%.6f"])
+    f = res.fsync
+    if f is not None:
+        np.savetxt(out / "fsync_servo.csv",
+                   np.column_stack([f["t_s"], f["offset_ns"], f["cmd_ppb"], f["num"], f["psi_ns"], f["rate_ppb"],
+                                    f["phc_offset_ns"]]), delimiter=",",
+                   header="t_edge_s,offset_seen_ns,cmd_ppb,num,fsync_minus_gm_ns,fsync_rate_error_ppb,phc_offset_ns",
+                   comments="", fmt=["%.12f", "%.0f", "%.6f", "%.0f", "%.4f", "%.6f", "%.4f"])
 
 
 def _json(o):

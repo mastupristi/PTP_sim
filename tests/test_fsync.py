@@ -100,16 +100,15 @@ def test_cascade_decimation_sets_the_update_rate():
 
 def test_cascade_wrapped_detector_realigns_modulo_the_period_after_a_phc_step():
     kw = {"oscillator.initial_offset_ns": 5e6, "firmware.step_threshold_ns": 1_000_000, "duration_s": 60.0}
-    w = simulate(cascade(**kw))
-    u = simulate(cascade(**{**kw, "fsync.phase_detector": "unwrapped", "fsync.controller.params":
-                            {"wn": 20.0, "zeta": 1.0, "sat_ppb": 45_000_000.0}}))
+    w = simulate(cascade(**{**kw, "fsync.phase_detector": "wrapped"}))
+    u = simulate(cascade(**kw))                                          # the default: unwrapped
     assert w.counters["steps"] >= 1
     late = w.fsync["t_s"] > 50.0
     # wrapped: on the PHC grid modulo P, but the full 5 ms was not slewed
     assert np.abs(_wrap(w.fsync["psi_ns"][late] - w.fsync["phc_offset_ns"][late])).max() < 3.0
     assert np.abs(_wrap(w.fsync["psi_ns"][late])).max() < 50.0          # on the GM grid modulo the period
     assert np.abs(w.fsync["psi_ns"][late]).min() > 1e6                  # ... but 243 periods (5 ms) away from it
-    # unwrapped: follows the PHC phase including the step (anchored on the first edge), with an unsaturated command
+    # unwrapped: follows the PHC phase including the step (anchored on the first edge)
     ul = u.fsync["t_s"] > 50.0
     assert np.abs(u.fsync["psi_ns"][ul] - u.fsync["phc_offset_ns"][ul]).max() < 3.0       # on the PHC itself
     assert np.abs(u.fsync["psi_ns"][ul]).max() < 50.0                   # the whole 5 ms was slewed
@@ -143,3 +142,35 @@ def test_cascade_timestamps_are_quantised_to_the_timer_tick():
     off = r.fsync["offset_ns"][late]
     # the offset is the distance of a 10 ns-aligned timestamp from the grid: its fractional part repeats
     assert len(np.unique(off)) <= 12
+
+
+def test_cascade_defaults_follow_the_steps_without_winding_up_against_the_num_range():
+    """Default detector unwrapped (FSYNC also follows a PTP step); the servo-2 command limit (9 000 ppm) sits inside
+    the NUM range (-9 304 ppm), so the integrator is frozen while it saturates: no overshoot beyond a few us."""
+    kw = {"oscillator.initial_offset_ns": 5e6, "firmware.step_threshold_ns": 1_000_000, "duration_s": 30.0}
+    r = simulate(cascade(**kw))
+    assert r.cfg.fsync.phase_detector == "unwrapped" and r.counters["steps"] >= 1
+    f = r.fsync
+    d = f["psi_ns"] - f["phc_offset_ns"]
+    after = f["t_s"] > 4.0                                                # the 5 ms step is slewed at <= 9 000 ppm
+    p = AudioPll()
+    assert f["num"].min() >= p.num_min and (f["num"] == p.num_for_ppb(-9_000_000.0)).any()   # saturated, inside the range
+    assert np.abs(d[after]).max() < 5_000.0                               # overshoot below 5 us
+    assert np.abs(d[f["t_s"] > 20.0]).max() < 3.0
+
+
+def test_overlay_of_a_cascade_run_skips_the_fsync_servo():
+    from ptpsim.live import overlay_config
+    c = cascade(**{"controller.name": "pi_time_aware", "controller.params": {}})
+    assert overlay_config(c).fsync.mode == "off"
+    s = shared(**{"controller.name": "pi_time_aware", "controller.params": {}})
+    assert overlay_config(s).fsync.mode == "shared"                       # B changes the PTP hardware: kept
+
+
+def test_export_writes_the_fsync_series(tmp_path):
+    from ptpsim.export import export_result
+    out = export_result(simulate(cascade(duration_s=5.0)), tmp_path)
+    for name in ("fsync_phase.csv", "fsync_rate.csv", "fsync_servo.csv"):
+        assert (out / name).exists() and (out / name).stat().st_size > 100
+    rows = (out / "fsync_servo.csv").read_text().splitlines()
+    assert rows[0].startswith("t_edge_s,offset_seen_ns") and len(rows) == 5 * 1000 + 1

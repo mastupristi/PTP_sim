@@ -303,19 +303,23 @@ n ∈ [−4, 2] — this is a GUI choice, **not** a protocol limit (the firmware
     PLL and the PTP servo trims `NUM` (the actuator choice above is not used); **A** — the PTP timer is disciplined by the actuator
     above, FSYNC comes from the PLL and a **second servo** trims its `NUM` from the PTP timestamps of the FSYNC edges.
   * **Servo 2 every** [edges] (A): 48 = 1 ms, 480 = 10 ms at 48 kHz. 1 ms costs ≈ 1.9 s per 300 s of simulation.
-  * **Phase detector** (A): *wrapped* — distance of the edge timestamp from the nearest point of the PTP-clock grid; after a PTP
-    step FSYNC re-aligns within half a period; *unwrapped* — from the grid anchored on the first edge, FSYNC slews the whole step.
-  * **Servo 2 wn / zeta** (A): the second servo is `pi_time_aware` (default 20 rad/s, 1); other controllers via JSON
-    (`fsync.controller`).
+  * **Phase detector** (A): *unwrapped* (default) — from the PTP-clock grid anchored on the first edge: FSYNC follows the PTP
+    steps too, slewing them; *wrapped* — distance from the nearest point of the grid: after a PTP step FSYNC re-aligns within
+    half a period (and with a locked PHC it also sits on the GM grid, modulo the period).
+  * **Servo 2 wn / zeta** (A): the second servo is `pi_time_aware` (default 20 rad/s, 1, command limit 9 000 ppm inside the
+    `NUM` range); other controllers via JSON (`fsync.controller`). With the NXP timer the decimation interacts with the tick
+    (model.md §7c): 48 or 480 (multiples of 3) give a quiet frequency and up to one tick of phase error, 49 halves the phase
+    error but makes the frequency noisier.
   * **NUM writes > 200 kHz**: AN14420 allows at most 200 kHz of VCO per write; *split in steps* one lock time (8.33 µs) apart
     (default), *capped* (the rest is not applied) or *one write*.
   * What to expect: in **B** the PHC locks but FSYNC stays ≈ **+204.5 ppb** fast — the timer correction programmed for ratio 1
     at 196.608 MHz leaves the PHC 204.5 ppb slow, the PLL compensates it and FSYNC, which does not have it, inherits the
-    opposite (it walks one period every ≈ 102 s). In **A** FSYNC follows the PHC (≈ 0 ppb mean, 1.7 ppb RMS; 0.9 ns RMS on the
-    PHC grid). The metrics table has a row *FSYNC (final window)*. JSON: `fsync.*` (§6).
+    opposite (it walks one period every ≈ 102 s). In **A** FSYNC follows the PHC (≈ 0 ppb mean, 1.7 ppb RMS; 0.37 ns RMS on the
+    PHC grid with the ideal PTP timer). The metrics table has a row *FSYNC (final window)*. JSON: `fsync.*` (§6). FSYNC is an Exploration feature: the
+    group is disabled in live mode.
 
 ![Architecture A](img/gui_fsync_a_en.png)
-*Architecture A, 120 s: the FSYNC plot shows FSYNC − GM grid (green, wrapped while the offset is beyond half a period), FSYNC − PHC grid (blue, dashed) and what servo 2 sees (orange); the table row reads mean +0.008 ppb, RMS 1.667 ppb, 0.89 ns RMS on the PHC grid.*
+*Architecture A, 120 s: the FSYNC plot shows FSYNC − GM grid (green, wrapped while the offset is beyond half a period), FSYNC − PHC grid (blue, dashed) and what servo 2 sees (orange); the table row reads mean +0.008 ppb, RMS 1.667 ppb, 0.37 ns RMS on the PHC grid.*
 
 ![Architecture B](img/gui_fsync_b_en.png)
 *Architecture B, 300 s: the PHC locks (offset plot), FSYNC drifts against the GM grid by +204.5 ppb (the saw-tooth in the FSYNC plot, one period per ≈ 102 s).*
@@ -373,8 +377,8 @@ time base of all timestamps, default 1.7×10¹⁸ ns; must be > 0), and the grou
 not in the firmware).
 A jitter object is `{ "kind": "none|uniform|normal|exponential", "scale_ns": x, "clip_sigma": 4 }`.
 `fsync`: `mode` (`off` | `shared` = B | `cascade` = A), `initial_offset_ns` (FSYNC phase vs the GM grid at t = 0; `null` = the
-PHC initial offset), `decimation` (48), `phase_detector` (`wrapped` | `unwrapped`), `cmd_latency_ns` (capture → `NUM` write),
-`capture_noise_ns`, `controller` (`name`, `params`: the second servo, default `pi_time_aware` 20 rad/s), and `pll`: `fref_hz`
+PHC initial offset), `decimation` (48), `phase_detector` (`unwrapped` | `wrapped`), `cmd_latency_ns` (capture → `NUM` write),
+`capture_noise_ns`, `controller` (`name`, `params`: the second servo, default `pi_time_aware` 20 rad/s, `sat_ppb` 9 000 ppm), and `pll`: `fref_hz`
 (24 MHz), `vco_hz` (786.432 MHz), `den` (10⁹), `timer_div` (4, B), `fsync_div` (16 384), `step_limit_hz` (200 kHz),
 `step_policy` (`substep` | `cap` | `off`).
 

@@ -28,6 +28,7 @@ def _run_cancellable(sim: Simulation, t_end: float, gen: int, latest) -> bool:
             return False
         t = min(t_end, t + CHUNK_S)
         sim.run_until(t)
+        sim.advance_fsync()                     # cascade FSYNC servo, chunk by chunk (no-op otherwise)
     return True
 
 

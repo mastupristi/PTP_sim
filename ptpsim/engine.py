@@ -765,14 +765,20 @@ class Simulation:
         self.changes.append((self.now / PS_PER_S, "; ".join(notes) or ", ".join(f"{k}={v}" for k, v in overrides.items())))
 
     # ------------------------------------------------------------------ results
+    def advance_fsync(self) -> None:
+        """Cascade mode: run the second servo up to ``now`` (incremental; the worker calls it per chunk so a long run
+        stays cancellable, ``result()`` calls it once more)."""
+        if self.fsync_servo is not None and self.fsync_servo.t_done < self.now:
+            t0 = _time.perf_counter()
+            self.fsync_servo.advance(self.clock, self._eps_t, self._eps_v, self.now)
+            self._wall += _time.perf_counter() - t0
+
     def result(self) -> SimResult:
         n = self.cfg.network
         arr = np.array
         fsync_clock, fsync = self.fsync_clock, None
         if self.fsync_servo is not None:
-            t0 = _time.perf_counter()
-            self.fsync_servo.advance(self.clock, self._eps_t, self._eps_v, self.now)
-            self._wall += _time.perf_counter() - t0
+            self.advance_fsync()
             fsync_clock, fsync = self.fsync_servo.clock, self.fsync_servo.result()
         return SimResult(
             cfg=self.cfg.copy(), t_end_s=self.now / PS_PER_S, wall_s=self._wall, n_events=self.n_events,

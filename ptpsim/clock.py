@@ -111,7 +111,7 @@ class SlaveClock:
     # ---- analysis ----------------------------------------------------------
     def breakpoints(self):
         """(anchor times in ps, total phase at the anchors (float), slopes)."""
-        phi = np.array([float(b) for b in self._big]) + np.array(self._phi0)
+        phi = np.array(self._big, dtype=np.float64) + np.array(self._phi0, dtype=np.float64)
         return (np.array(self._t0, dtype=np.int64), phi, np.array(self._slope))
 
     def exact_breakpoints(self):

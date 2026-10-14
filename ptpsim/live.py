@@ -24,6 +24,8 @@ def overlay_config(cfg: SimConfig) -> SimConfig | None:
         return None
     b = cfg.with_overrides(**{"controller.name": "baseline_pi", "controller.params": {"kp": 0.7, "ki": 0.3}})
     b.firmware = FirmwareConfig()
+    if b.fsync.mode == "cascade":
+        b.fsync.mode = "off"            # FSYNC is drawn for the main run only; the PTP loop is the same without it
     return b
 
 

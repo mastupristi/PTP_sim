@@ -303,20 +303,24 @@ n ∈ [−4, 2]: è una scelta della GUI, **non** un limite del protocollo (il f
     servo PTP regola `NUM` (la scelta dell'attuatore sopra non è usata); **A** — il timer PTP è disciplinato dall'attuatore sopra,
     FSYNC viene dal PLL e un **secondo servo** ne regola `NUM` dai timestamp PTP dei fronti di FSYNC.
   * **Servo 2 ogni** [fronti] (A): 48 = 1 ms, 480 = 10 ms a 48 kHz. 1 ms costa ≈ 1,9 s per 300 s di simulazione.
-  * **Rivelatore di fase** (A): *avvolto* — distanza del timestamp del fronte dal punto più vicino della griglia dell'orologio PTP;
-    dopo uno step PTP FSYNC si riallinea entro mezzo periodo; *non avvolto* — dalla griglia ancorata al primo fronte, FSYNC
-    recupera tutto lo step.
-  * **wn / zeta servo 2** (A): il secondo servo è `pi_time_aware` (default 20 rad/s, 1); altri controllori via JSON
-    (`fsync.controller`).
+  * **Rivelatore di fase** (A): *non avvolto* (default) — dalla griglia dell'orologio PTP ancorata al primo fronte: FSYNC segue
+    anche gli step PTP, recuperandoli; *avvolto* — distanza dal punto più vicino della griglia: dopo uno step PTP FSYNC si
+    riallinea entro mezzo periodo (e con il PHC agganciato sta anche sulla griglia del GM, modulo il periodo).
+  * **wn / zeta servo 2** (A): il secondo servo è `pi_time_aware` (default 20 rad/s, 1, limite del comando 9 000 ppm dentro il range
+    di `NUM`); altri controllori via JSON (`fsync.controller`). Con il timer NXP la decimazione interagisce con il tick
+    (model.md §7c): 48 o 480 (multipli di 3) danno una frequenza tranquilla e fino a un tick di errore di fase, 49 dimezza
+    l'errore di fase ma rende la frequenza più rumorosa.
   * **Scritture NUM > 200 kHz**: l'AN14420 ammette al massimo 200 kHz di VCO per scrittura; *divise in passi* a un tempo di lock
     (8,33 µs) l'uno dall'altro (default), *limitate* (il resto non viene applicato) o *una scrittura*.
   * Cosa aspettarsi: in **B** il PHC si aggancia ma FSYNC resta ≈ **+204,5 ppb** veloce — la correzione del timer programmata per
     ratio 1 a 196,608 MHz lascia il PHC 204,5 ppb lento, il PLL lo compensa e FSYNC, che non ha quel residuo, eredita l'opposto
-    (scivola di un periodo ogni ≈ 102 s). In **A** FSYNC segue il PHC (≈ 0 ppb medio, 1,7 ppb RMS; 0,9 ns RMS sulla griglia del PHC).
-    La tabella delle metriche ha una riga *FSYNC (finestra finale)*. JSON: `fsync.*` (§6).
+    (scivola di un periodo ogni ≈ 102 s). In **A** FSYNC segue il PHC (≈ 0 ppb medio, 1,7 ppb RMS; 0,37 ns RMS sulla griglia del PHC
+    con il timer PTP ideale).
+    La tabella delle metriche ha una riga *FSYNC (finestra finale)*. JSON: `fsync.*` (§6). FSYNC è una funzione
+    dell'Esplorazione: il gruppo è disabilitato in modalità live.
 
 ![Architettura A](img/gui_fsync_a_it.png)
-*Architettura A, 120 s: il grafico FSYNC mostra FSYNC − griglia GM (verde, avvolta finché l'offset supera mezzo periodo), FSYNC − griglia PHC (blu, tratteggiata) e ciò che vede il servo 2 (arancio); la riga della tabella dice medio +0,008 ppb, RMS 1,667 ppb, 0,89 ns RMS sulla griglia del PHC.*
+*Architettura A, 120 s: il grafico FSYNC mostra FSYNC − griglia GM (verde, avvolta finché l'offset supera mezzo periodo), FSYNC − griglia PHC (blu, tratteggiata) e ciò che vede il servo 2 (arancio); la riga della tabella dice medio +0,008 ppb, RMS 1,667 ppb, 0,37 ns RMS sulla griglia del PHC.*
 
 ![Architettura B](img/gui_fsync_b_it.png)
 *Architettura B, 300 s: il PHC si aggancia (grafico dell'offset), FSYNC deriva rispetto alla griglia del GM di +204,5 ppb (il dente di sega nel grafico FSYNC, un periodo ogni ≈ 102 s).*
@@ -373,8 +377,8 @@ deve essere > 0) e i gruppi `intervals`, `oscillator`, `network`, `latency`, `tx
 `cmd_clamp_ppm` (0 = off, non presente nel firmware).
 Un oggetto jitter è `{ "kind": "none|uniform|normal|exponential", "scale_ns": x, "clip_sigma": 4 }`.
 `fsync`: `mode` (`off` | `shared` = B | `cascade` = A), `initial_offset_ns` (fase di FSYNC rispetto alla griglia del GM a t = 0;
-`null` = l'offset iniziale del PHC), `decimation` (48), `phase_detector` (`wrapped` | `unwrapped`), `cmd_latency_ns` (cattura →
-scrittura di `NUM`), `capture_noise_ns`, `controller` (`name`, `params`: il secondo servo, default `pi_time_aware` 20 rad/s) e `pll`:
+`null` = l'offset iniziale del PHC), `decimation` (48), `phase_detector` (`unwrapped` | `wrapped`), `cmd_latency_ns` (cattura →
+scrittura di `NUM`), `capture_noise_ns`, `controller` (`name`, `params`: il secondo servo, default `pi_time_aware` 20 rad/s, `sat_ppb` 9 000 ppm) e `pll`:
 `fref_hz` (24 MHz), `vco_hz` (786,432 MHz), `den` (10⁹), `timer_div` (4, B), `fsync_div` (16 384), `step_limit_hz` (200 kHz),
 `step_policy` (`substep` | `cap` | `off`).
 

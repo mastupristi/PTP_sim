@@ -452,7 +452,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.fs_mode.currentIndexChanged.connect(lambda *_: self._on_param_changed(None, 0.0, "fsync.mode"))
         grid.addWidget(QtWidgets.QLabel(T("fs_mode")), 0, 0)
         grid.addWidget(self.fs_mode, 0, 1, 1, 2)
-        self._row("fs_dec", grid, 1, "fs_dec", ["fsync.decimation"], 1, 4800, c.fsync.decimation, 1, integer=True,
+        self._row("fs_dec", grid, 1, "fs_dec", ["fsync.decimation"], 4, 4800, c.fsync.decimation, 1, integer=True,
                   log=True, tip_key="fs_dec_tip")
         self.fs_det = QtWidgets.QComboBox()
         for key in ("wrapped", "unwrapped"):
@@ -984,12 +984,14 @@ class MainWindow(QtWidgets.QMainWindow):
         cascade = self.fs_mode.currentData() == "cascade"
         self.act_combo.setEnabled(not shared)               # B: the PLL is the actuator, the timer runs from it
         self.root_combo.setEnabled(self.act_combo.currentIndex() == 1 and not shared)
-        for k in ("fs_dec", "fs_wn", "fs_zeta"):
-            self.rows[k].set_enabled(cascade)
-        self.fs_det.setEnabled(cascade)
-        self.fs_policy.setEnabled(shared or cascade)
-        self.fs_info.setText(self._fs_text())
         live = self.mode == "live"
+        # FSYNC is an Exploration feature: a live session neither draws it nor rebuilds it on a change
+        self.fs_mode.setEnabled(not live)
+        for k in ("fs_dec", "fs_wn", "fs_zeta"):
+            self.rows[k].set_enabled(cascade and not live)
+        self.fs_det.setEnabled(cascade and not live)
+        self.fs_policy.setEnabled((shared or cascade) and not live)
+        self.fs_info.setText(self._fs_text())
         for k in ("offset0", "freq0", "seed", "duration"):
             self.rows[k].set_enabled(not live or self.live_state == "stopped")
         for b in (self.btn_start, self.btn_pause, self.btn_reset):
