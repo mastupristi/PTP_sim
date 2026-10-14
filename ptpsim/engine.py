@@ -32,6 +32,7 @@ from .actuators import make_actuator
 from .clock import PS_PER_NS, SlaveClock
 from .config import SimConfig, set_path
 from .controllers import REGISTRY, Controller, ServoSample, make_controller
+from .fsync import FsyncServo
 from .rng import Disturbances
 
 PS_PER_S = 1_000_000_000_000
@@ -92,6 +93,13 @@ class SimResult:
     events: list[tuple[float, str, str]]
     changes: list[tuple[float, str]]       # live parameter changes (t_s, text)
     counters: dict[str, int]
+    # FSYNC (``cfg.fsync.mode`` != "off"): the follower's frame sync as a piecewise-linear clock (edges where it reads
+    # k * P), the crystal error history, the actuator state, and (cascade) the second servo's samples
+    fsync_clock: SlaveClock | None = None
+    eps_t_ps: np.ndarray | None = None
+    eps_ppb: np.ndarray | None = None
+    actuator_info: dict | None = None
+    fsync: dict | None = None
 
     def true_offset_ns(self, t_s: np.ndarray) -> np.ndarray:
         return self.clock.sample_ns(np.round(np.asarray(t_s) * PS_PER_S).astype(np.int64))
@@ -105,7 +113,7 @@ class Simulation:
         c = self.cfg
         self.dist = Disturbances(c.seed)
         self.ctrl = controller or make_controller(c.controller.name, c.controller.params)
-        self.act = make_actuator(c.actuator)
+        self.act = make_actuator(c.actuator, c.fsync)
         self.E = int(c.epoch_ns)
         self.now = 0
         self._heap: list[tuple[int, int, int, Callable, Any]] = []
@@ -117,6 +125,20 @@ class Simulation:
         self.eps_ppb = c.oscillator.freq_error_ppb
         self._applied_delta = self.act.effective_delta
         self.clock = SlaveClock(c.oscillator.initial_offset_ns, self._slope(), 0)
+        # crystal error history (common to every PLL of the chip: FSYNC needs it, the PHC slope mixes it with the actuator)
+        self._eps_t: list[int] = [0]
+        self._eps_v: list[float] = [self.eps_ppb]
+        # FSYNC: in the shared mode (architecture B) it comes from the same Audio PLL as the timer, so the engine keeps its
+        # phase next to the PHC (same rate events, no phase steps); the cascade mode (A) computes it after the PTP loop
+        self._applied_fs_delta = getattr(self.act, "fsync_delta", 0.0)
+        self._rate_gen = 0
+        self.fsync_clock: SlaveClock | None = None
+        if c.fsync.mode == "shared":
+            phi0 = c.oscillator.initial_offset_ns if c.fsync.initial_offset_ns is None else c.fsync.initial_offset_ns
+            self.fsync_clock = SlaveClock(phi0, self._fs_slope(), 0)
+        elif c.fsync.mode not in ("off", "cascade"):
+            raise ValueError(f"unknown fsync mode {c.fsync.mode!r}")
+        self.fsync_servo: FsyncServo | None = None
 
         # GM / sequences
         self.sync_k = 0
@@ -177,6 +199,8 @@ class Simulation:
                          "range_resets": 0, "saturated": 0, "delay_samples": 0, "stale_pairs": 0}
 
         self._schedule_start()
+        if c.fsync.mode == "cascade":
+            self.fsync_servo = FsyncServo(c, c.oscillator.initial_offset_ns, self._slave_quantum_ps(), self.dist)
 
     # ------------------------------------------------------------------ plumbing
     def _push(self, t_ps: int, prio: int, fn: Callable, arg: Any = None) -> None:
@@ -187,6 +211,12 @@ class Simulation:
         """Clock rate error vs physical time: (1 + eps)(1 + d) - 1 written without cancellation."""
         e = self.eps_ppb * 1e-9
         d = self._applied_delta
+        return e + d + e * d
+
+    def _fs_slope(self) -> float:
+        """FSYNC rate error vs physical time in the shared mode: crystal x PLL, without the timer's residual."""
+        e = self.eps_ppb * 1e-9
+        d = self._applied_fs_delta
         return e + d + e * d
 
     def _log(self, kind: str, text: str = "") -> None:
@@ -510,22 +540,48 @@ class Simulation:
     # ------------------------------------------------------------------ rate effect / oscillator
     def _schedule_rate_effect(self) -> None:
         lat = _ps(self.cfg.latency.command_ns)
-        delta = self.act.effective_delta
-        if lat <= 0:
-            self._on_rate_effect(delta)
-        else:
-            self._push(self.now + lat, P_RATE, self._on_rate_effect, delta)
+        steps = getattr(self.act, "steps", None)
+        if steps is None:                             # ideal / NXP: one write
+            delta = self.act.effective_delta
+            if lat <= 0:
+                self._on_rate_effect(delta)
+            else:
+                self._push(self.now + lat, P_RATE, self._on_rate_effect, delta)
+            return
+        # Audio PLL: one NUM write per lock time (AN14420); a newer command cancels the rest of an older ramp
+        self._rate_gen += 1
+        gap = _ps(self.act.lock_time_s * 1e9)          # lock time, 8.33 us at 24 MHz
+        for i, (delta, fs_delta) in enumerate(steps):
+            t = lat + i * gap
+            if t <= 0:
+                self._on_pll_effect((self._rate_gen, delta, fs_delta))
+            else:
+                self._push(self.now + t, P_RATE, self._on_pll_effect, (self._rate_gen, delta, fs_delta))
 
     def _on_rate_effect(self, delta: float) -> None:
         self._applied_delta = delta
         self._apply_slope()
 
+    def _on_pll_effect(self, arg) -> None:
+        gen, delta, fs_delta = arg
+        if gen != self._rate_gen:
+            return                                    # superseded by a newer command
+        self._applied_delta = delta
+        self._applied_fs_delta = fs_delta
+        self._apply_slope()
+
     def _apply_slope(self) -> None:
         slope = self._slope()
         self.clock.set_slope(self.now, slope)
+        if self.fsync_clock is not None:
+            self.fsync_clock.set_slope(self.now, self._fs_slope())
         self._r_t.append(self.now / PS_PER_S)
         self._r_cmd.append(self._last_cmd_ppb)
         self._r_eff.append(slope * 1e9)
+
+    def _record_eps(self) -> None:
+        self._eps_t.append(self.now)
+        self._eps_v.append(self.eps_ppb)
 
     def _on_osc_update(self, gen) -> None:
         if gen != self._osc_gen:
@@ -536,6 +592,7 @@ class Simulation:
         if o.walk_ppb_per_sqrt_s != 0.0:
             self.eps_ppb += o.walk_ppb_per_sqrt_s * math.sqrt(dt) * self.dist.stream("osc.walk").z(self.osc_i)
         self.osc_i += 1
+        self._record_eps()
         self._apply_slope()
         if self._osc_dynamic():
             self._push(self.now + _ps(dt * 1e9), P_RATE, self._on_osc_update, self._osc_gen)
@@ -681,12 +738,14 @@ class Simulation:
             self.ctrl.set_params(ctrl_params, controller_policy)
             notes.append("gains " + ", ".join(f"{k}={v:g}" for k, v in ctrl_params.items()) + f" ({controller_policy})")
         if "actuator.kind" in overrides or "actuator.clock_hz" in overrides or "actuator.max_ratio_ppm" in overrides:
-            self.act = make_actuator(c.actuator)
+            self.act = make_actuator(c.actuator, c.fsync)
             self._applied_delta = self.act.effective_delta
+            self._applied_fs_delta = getattr(self.act, "fsync_delta", 0.0)
             self._apply_slope()
             notes.append("actuator re-initialised at its nominal state")
         if "oscillator.freq_error_ppb" in overrides:
             self.eps_ppb = c.oscillator.freq_error_ppb
+            self._record_eps()
             self._apply_slope()
         if any(k.startswith("oscillator.") and k.split(".")[1] in ("drift_ppb_per_s", "walk_ppb_per_sqrt_s",
                                                                     "update_period_s") for k in overrides):
@@ -709,6 +768,12 @@ class Simulation:
     def result(self) -> SimResult:
         n = self.cfg.network
         arr = np.array
+        fsync_clock, fsync = self.fsync_clock, None
+        if self.fsync_servo is not None:
+            t0 = _time.perf_counter()
+            self.fsync_servo.advance(self.clock, self._eps_t, self._eps_v, self.now)
+            self._wall += _time.perf_counter() - t0
+            fsync_clock, fsync = self.fsync_servo.clock, self.fsync_servo.result()
         return SimResult(
             cfg=self.cfg.copy(), t_end_s=self.now / PS_PER_S, wall_s=self._wall, n_events=self.n_events,
             servo_t_proc_s=arr(self._s_t_proc), servo_t_sample_s=arr(self._s_t_samp),
@@ -724,7 +789,8 @@ class Simulation:
             sync_tx_s=arr(self._sync_tx), dreq_tx_s=arr(self._dreq_tx),
             rate_t_s=arr(self._r_t), rate_cmd_ppb=arr(self._r_cmd), rate_eff_ppb=arr(self._r_eff),
             clock=self.clock, events=list(self.events), changes=list(self.changes),
-            counters=dict(self.counters))
+            counters=dict(self.counters), fsync_clock=fsync_clock, fsync=fsync,
+            eps_t_ps=arr(self._eps_t, dtype=np.int64), eps_ppb=arr(self._eps_v), actuator_info=self.act.describe())
 
 
 def simulate(cfg: SimConfig, controller: Controller | None = None) -> SimResult:

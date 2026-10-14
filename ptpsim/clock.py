@@ -100,6 +100,14 @@ class SlaveClock:
             x = (x // quantum_ps) * quantum_ps
         return x
 
+    def read_hist_ps(self, t_ps: int, noise_ns: float = 0.0, quantum_ps: int = 0) -> int:
+        """``read_ps`` at any past/present instant (looks the segment up; exact integer ``big`` part)."""
+        i = max(0, bisect.bisect_right(self._t0, t_ps) - 1)
+        x = t_ps + self._big[i] * PS_PER_NS + int(round((self._small_at(i, t_ps) + noise_ns) * PS_PER_NS))
+        if quantum_ps > 0:
+            x = (x // quantum_ps) * quantum_ps
+        return x
+
     # ---- analysis ----------------------------------------------------------
     def breakpoints(self):
         """(anchor times in ps, total phase at the anchors (float), slopes)."""

@@ -112,6 +112,39 @@ class ControllerConfig:
 
 
 @dataclass
+class PllConfig:
+    """Fractional-N Audio PLL of the i.MX RT1170 (``ptpsim/pll.py``): f_VCO = Fref * (DIV_SELECT + NUM / DENOM).
+    DIV_SELECT and the nominal NUM are derived from ``vco_hz`` and ``den``."""
+    fref_hz: int = 24_000_000            # crystal (common to every PLL of the chip)
+    vco_hz: int = 786_432_000
+    den: int = 1_000_000_000             # DENOM (30 bits); a power of ten keeps NUM per ppb a decimal constant
+    timer_div: int = 4                   # VCO / timer_div = PTP timer clock in the shared mode (196.608 MHz)
+    fsync_div: int = 16_384              # VCO / fsync_div = FSYNC (48 kHz)
+    step_limit_hz: float = 200_000.0     # AN14420: max VCO change per NUM write without glitch (0 = no limit)
+    step_policy: str = "substep"         # substep (several writes, one per lock time) | cap (one capped write) | off
+
+
+@dataclass
+class FsyncConfig:
+    """TDM frame sync of the follower.
+
+    mode ``off``: no FSYNC model (the simulator as before).  ``shared`` (architecture B): the PTP timer and FSYNC both
+    come from the Audio PLL, and the PTP servo trims its NUM (the ENET timer correction stays at its nominal setting).
+    ``cascade`` (architecture A): the PTP timer is disciplined as configured in ``actuator``; FSYNC comes from the
+    Audio PLL and a second servo, fed by the PTP-timer timestamps of the FSYNC rising edges, trims its NUM.
+    """
+    mode: str = "off"
+    initial_offset_ns: float | None = None   # FSYNC phase vs the GM grid at t = 0 (None = the PHC initial offset)
+    decimation: int = 48                 # cascade: one servo-2 update every this many FSYNC edges
+    phase_detector: str = "wrapped"      # cascade: wrapped (edge vs the PHC grid, modulo the period) | unwrapped
+    cmd_latency_ns: float = 0.0          # cascade: capture -> NUM write
+    capture_noise_ns: float = 0.0        # cascade: noise of the edge timestamps (on top of the timer tick)
+    controller: ControllerConfig = field(default_factory=lambda: ControllerConfig(
+        "pi_time_aware", {"wn": 20.0, "zeta": 1.0}))
+    pll: PllConfig = field(default_factory=PllConfig)
+
+
+@dataclass
 class FirmwareConfig:
     """Constants of clock.c (SYNC_SERVO_*). Not changed unless explicitly requested."""
     step_threshold_ns: int = 1_000_000_000
@@ -144,6 +177,7 @@ class SimConfig:
     actuator: ActuatorConfig = field(default_factory=ActuatorConfig)
     controller: ControllerConfig = field(default_factory=ControllerConfig)
     firmware: FirmwareConfig = field(default_factory=FirmwareConfig)
+    fsync: FsyncConfig = field(default_factory=FsyncConfig)
 
     # ---- (de)serialisation -------------------------------------------------
     def to_dict(self) -> dict[str, Any]:
