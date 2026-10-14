@@ -44,6 +44,45 @@ def _pi_terms(t_proc, p_ppb, i_ppb, out_ppb) -> dict:
     return {"pi_t": t_proc[ran], "pi_p": p_ppb[ran], "pi_i": i_ppb[ran], "pi_out": out_ppb[ran]}
 
 
+FSYNC_PLOT_POINTS = 60_000          # servo-2 samples sent for drawing (decimated for rendering only)
+
+
+def fsync_freq_hz(cfg: SimConfig) -> int:
+    p = cfg.fsync.pll
+    return p.vco_hz // p.fsync_div
+
+
+def _wrap(x: np.ndarray, period: float) -> np.ndarray:
+    return (x + period / 2) % period - period / 2
+
+
+def _pack_fsync(res: SimResult, t_dense: np.ndarray) -> dict:
+    """FSYNC arrays: its segments (oscilloscope), its true phase against the GM grid (wrapped to one period) and against
+    the PHC grid on the dense time grid, its true rate error, and (cascade) the second servo's samples."""
+    if res.fsync_clock is None:
+        return {}
+    hz = fsync_freq_hz(res.cfg)
+    per = 1e9 / hz
+    t_ps = np.round(t_dense * PS_PER_S).astype(np.int64)
+    psi = res.fsync_clock.sample_ns(t_ps)
+    phc = res.clock.sample_ns(t_ps)
+    f0, fbig, fsmall, fslope = res.fsync_clock.exact_breakpoints()
+    out = {"fsync_mode": res.cfg.fsync.mode, "fsync_hz": hz,
+           "fsync_bp": {"t0_ps": f0, "big_ns": fbig, "small_ns": fsmall, "slope": fslope},
+           "fs_t": t_dense, "fs_gm": _wrap(psi, per), "fs_phc": _wrap(psi - phc, per),
+           "fs_rate_t": f0 / PS_PER_S, "fs_rate": fslope * 1e9}
+    f = res.fsync
+    if f is not None:
+        n = f["t_s"].size
+        step = max(1, -(-n // FSYNC_PLOT_POINTS))
+        out.update({"fs_obs_t": f["t_s"][::step], "fs_obs": f["offset_ns"][::step], "fs_cmd": f["cmd_ppb"][::step],
+                    "fs_n_updates": n, "fs_decimation": f["decimation"]})
+    if fslope.size > FSYNC_PLOT_POINTS:                    # the segments are for the scope; the rate plot is decimated
+        step = -(-fslope.size // FSYNC_PLOT_POINTS)
+        out["fs_rate_t"], out["fs_rate"] = out["fs_rate_t"][::step], out["fs_rate"][::step]
+    return out
+
+
 def pack_result(res: SimResult, dense_dt_s: float | None = None) -> dict:
     """Arrays (and a few scalars) needed to draw and describe a full trajectory."""
     if dense_dt_s is None:
@@ -52,6 +91,7 @@ def pack_result(res: SimResult, dense_dt_s: float | None = None) -> dict:
     ok = np.isfinite(res.servo_offset_est_ns)
     t0, big, small, slope = res.clock.exact_breakpoints()
     return {
+        **_pack_fsync(res, t),
         "t_end": res.t_end_s,
         # exact slave-clock segments for the oscilloscope view (explore results only)
         "scope_bp": {"t0_ps": t0, "big_ns": big, "small_ns": small, "slope": slope},

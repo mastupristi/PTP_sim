@@ -209,6 +209,68 @@ STRINGS: dict[str, dict] = {
     "act_info_ideal": _s("ideal actuator — rate ratio {r:.12f}", "attuatore ideale — rate ratio {r:.12f}"),
     "act_info_nxp": _s("NXP: INC={inc}  INC_CORR={ic}  ATCOR={cor}  (effective ratio {r:.9f})",
                        "NXP: INC={inc}  INC_CORR={ic}  ATCOR={cor}  (ratio effettivo {r:.9f})"),
+    "act_info_pll": _s("Audio PLL: NUM={num}, PTP timer {f:.3f} MHz with ATINC/ATCOR fixed at ratio 1 (residual {res:+.1f} ppb, "
+                       "FSYNC does not have it) — ratio {r:.9f}",
+                       "Audio PLL: NUM={num}, timer PTP {f:.3f} MHz con ATINC/ATCOR fissi a ratio 1 (residuo {res:+.1f} ppb, "
+                       "che FSYNC non ha) — ratio {r:.9f}"),
+    "g_fsync": _s("FSYNC (TDM frame sync)", "FSYNC (frame sync TDM)"),
+    "fs_mode": _s("Architecture", "Architettura"),
+    "fs_mode_off": _s("off (no FSYNC)", "off (nessun FSYNC)"),
+    "fs_mode_shared": _s("B: timer and FSYNC from the Audio PLL, one servo", "B: timer e FSYNC dall'Audio PLL, un servo"),
+    "fs_mode_cascade": _s("A: FSYNC servo on the PTP clock (two servos)", "A: servo FSYNC sull'orologio PTP (due servo)"),
+    "fs_mode_tip": _s("B: the PTP servo trims the Audio PLL NUM; the PTP timer (VCO/4) and FSYNC (VCO/16384) both come "
+                      "from it. A: the PTP timer is disciplined by the actuator above; FSYNC comes from the Audio PLL and "
+                      "a second servo, fed by the PTP timestamps of its edges, trims its NUM.",
+                      "B: il servo PTP regola NUM dell'Audio PLL; timer PTP (VCO/4) e FSYNC (VCO/16384) derivano entrambi "
+                      "da lì. A: il timer PTP è disciplinato dall'attuatore sopra; FSYNC viene dall'Audio PLL e un secondo "
+                      "servo, alimentato dai timestamp PTP dei suoi fronti, ne regola NUM."),
+    "fs_dec": _s("Servo 2 every", "Servo 2 ogni"),
+    "fs_dec_tip": _s("FSYNC edges per servo-2 update (48 = 1 ms, 480 = 10 ms at 48 kHz)",
+                     "Fronti FSYNC per aggiornamento del servo 2 (48 = 1 ms, 480 = 10 ms a 48 kHz)"),
+    "fs_det": _s("Phase detector", "Rivelatore di fase"),
+    "fs_det_wrapped": _s("wrapped (modulo the period)", "avvolto (modulo il periodo)"),
+    "fs_det_unwrapped": _s("unwrapped (anchored on the first edge)", "non avvolto (ancorato al primo fronte)"),
+    "fs_det_tip": _s("Wrapped: distance of the edge timestamp from the nearest point of the PTP-clock grid k·P; after a "
+                     "PTP step FSYNC re-aligns within half a period. Unwrapped: from the grid anchored on the first edge; "
+                     "FSYNC slews the whole step.",
+                     "Avvolto: distanza del timestamp del fronte dal punto più vicino della griglia k·P dell'orologio "
+                     "PTP; dopo uno step PTP FSYNC si riallinea entro mezzo periodo. Non avvolto: dalla griglia "
+                     "ancorata al primo fronte; FSYNC recupera tutto lo step."),
+    "fs_wn": _s("Servo 2 wn", "wn servo 2"),
+    "fs_wn_tip": _s("natural frequency of the second servo (pi_time_aware) [rad/s]; capped at wn_ts_max/dt",
+                    "frequenza naturale del secondo servo (pi_time_aware) [rad/s]; limitata a wn_ts_max/dt"),
+    "fs_zeta": _s("Servo 2 zeta", "zeta servo 2"),
+    "fs_zeta_tip": _s("damping of the second servo []", "smorzamento del secondo servo []"),
+    "fs_pol": _s("NUM writes > 200 kHz", "Scritture NUM > 200 kHz"),
+    "fs_pol_substep": _s("split in steps, one per lock time", "divise in passi, uno per tempo di lock"),
+    "fs_pol_cap": _s("capped (the rest is not applied)", "limitate (il resto non viene applicato)"),
+    "fs_pol_off": _s("one write, any size", "una scrittura, di qualunque ampiezza"),
+    "fs_pol_tip": _s("AN14420: the VCO must not change by more than 200 kHz (254 ppm) per NUM write; the lock time is "
+                     "200/Fref = 8.33 us.", "AN14420: il VCO non deve cambiare più di 200 kHz (254 ppm) per scrittura di "
+                     "NUM; il tempo di lock è 200/Fref = 8,33 µs."),
+    "fs_info_off": _s("FSYNC not modelled.", "FSYNC non modellato."),
+    "fs_info_pll": _s("Audio PLL: VCO {vco:.3f} MHz = 24 MHz × ({div} + {num}/{den}); 1 LSB = {lsb:.4f} ppb; NUM range "
+                      "{lo:+.0f} … {hi:+.0f} ppm; FSYNC {f:g} kHz; max {step:.0f} ppm per write.",
+                      "Audio PLL: VCO {vco:.3f} MHz = 24 MHz × ({div} + {num}/{den}); 1 LSB = {lsb:.4f} ppb; range di "
+                      "NUM {lo:+.0f} … {hi:+.0f} ppm; FSYNC {f:g} kHz; max {step:.0f} ppm per scrittura."),
+    "fs_info_shared": _s("B: PTP timer {t:.3f} MHz from the PLL (the actuator choice above is not used).",
+                         "B: timer PTP {t:.3f} MHz dal PLL (la scelta dell'attuatore sopra non è usata)."),
+    "fs_info_cascade": _s("A: the PTP timer uses the actuator above; servo 2 trims the PLL.",
+                          "A: il timer PTP usa l'attuatore sopra; il servo 2 regola il PLL."),
+    "show_fs": _s("FSYNC", "FSYNC"),
+    "show_fs_tip": _s("FSYNC plot (needs Actuator → FSYNC architecture A or B)",
+                      "Grafico FSYNC (richiede Attuatore → architettura FSYNC A o B)"),
+    "pl_fs": _s("FSYNC phase (wrapped to one period)", "Fase di FSYNC (avvolta su un periodo)"),
+    "ax_fs": _s("phase [{u}]", "fase [{u}]"),
+    "lg_fs_gm": _s("FSYNC − GM grid (true)", "FSYNC − griglia GM (reale)"),
+    "lg_fs_phc": _s("FSYNC − PHC grid (true)", "FSYNC − griglia PHC (reale)"),
+    "lg_fs_obs": _s("FSYNC − PHC seen by servo 2", "FSYNC − PHC visto dal servo 2"),
+    "lg_fs_rate": _s("FSYNC rate error", "errore di rate FSYNC"),
+    "m_fsync": _s("FSYNC (final window)", "FSYNC (finestra finale)"),
+    "fs_txt": _s("frequency error vs GM: mean {a:+.3f} ppb, RMS {b:.3f} ppb; phase vs PHC grid: RMS {c}, max {d} "
+                 "(last {w:g} s)", "errore di frequenza vs GM: medio {a:+.3f} ppb, RMS {b:.3f} ppb; fase vs griglia PHC: "
+                 "RMS {c}, max {d} (ultimi {w:g} s)"),
+    "fs_txt_upd": _s("; {n} servo-2 updates", "; {n} aggiornamenti del servo 2"),
     # --- toolbar
     "units": _s("Units:", "Unità:"),
     "overlay": _s("Overlay baseline (unmodified firmware)", "Sovrapponi baseline (firmware non modificato)"),
@@ -248,7 +310,8 @@ STRINGS: dict[str, dict] = {
                    "L'oscilloscopio mostra il risultato dell'Esplorazione: passa alla modalità Esplorazione."),
     "scope_ax": _s("time relative to the GM trigger", "tempo rispetto al trigger GM"),
     "scope_gm": _s("GM", "GM"),
-    "scope_slave": _s("Slave", "Slave"),
+    "scope_slave": _s("Slave (PHC)", "Slave (PHC)"),
+    "scope_fsync": _s("FSYNC", "FSYNC"),
     "scope_trig": _s("trigger", "trigger"),
     "scope_loop": _s("loop", "ripeti"),
     "scope_speed": _s("speed", "velocità"),

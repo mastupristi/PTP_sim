@@ -37,6 +37,8 @@ UNIT_DECIMALS = {"ns": 2, "µs": 4, "ms": 6}
 # Okabe-Ito colour-blind safe palette
 C_TRUE, C_EST, C_BASE, C_DELAY, C_REF, C_EVT, C_TRANS = ("#0072B2", "#E69F00", "#CC79A7", "#009E73", "#000000",
                                                          "#D55E00", "#555555")
+C_FS = "#009E73"                                    # FSYNC (the same green as on the oscilloscope)
+FSYNC_MODES = ("off", "shared", "cascade")          # fsync.mode: none, architecture B, architecture A
 MAX_LIVE_POINTS = 200_000
 CLOCK_ROOTS = [("100 MHz (SYS_PLL1_DIV2/5, default)", 100_000_000), ("98.304 MHz (AUDIO_PLL/4)", 98_304_000),
                ("196.608 MHz (AUDIO_PLL/2)", 196_608_000), ("24 MHz (OSC_24M)", 24_000_000),
@@ -440,6 +442,44 @@ class MainWindow(QtWidgets.QMainWindow):
         self.act_info.setWordWrap(True)
         grid.addWidget(self.act_info, 2, 0, 1, 3)
         lay.addWidget(g)
+
+        g, grid = self._group(T("g_fsync"))
+        self.fs_mode = QtWidgets.QComboBox()
+        for key in FSYNC_MODES:
+            self.fs_mode.addItem(T("fs_mode_" + key), key)
+        self.fs_mode.setCurrentIndex(max(0, self.fs_mode.findData(c.fsync.mode)))
+        self.fs_mode.setToolTip(T("fs_mode_tip"))
+        self.fs_mode.currentIndexChanged.connect(lambda *_: self._on_param_changed(None, 0.0, "fsync.mode"))
+        grid.addWidget(QtWidgets.QLabel(T("fs_mode")), 0, 0)
+        grid.addWidget(self.fs_mode, 0, 1, 1, 2)
+        self._row("fs_dec", grid, 1, "fs_dec", ["fsync.decimation"], 1, 4800, c.fsync.decimation, 1, integer=True,
+                  log=True, tip_key="fs_dec_tip")
+        self.fs_det = QtWidgets.QComboBox()
+        for key in ("wrapped", "unwrapped"):
+            self.fs_det.addItem(T("fs_det_" + key), key)
+        self.fs_det.setCurrentIndex(max(0, self.fs_det.findData(c.fsync.phase_detector)))
+        self.fs_det.setToolTip(T("fs_det_tip"))
+        self.fs_det.currentIndexChanged.connect(lambda *_: self._on_param_changed(None, 0.0, "fsync.phase_detector"))
+        grid.addWidget(QtWidgets.QLabel(T("fs_det")), 2, 0)
+        grid.addWidget(self.fs_det, 2, 1, 1, 2)
+        p2 = c.fsync.controller.params
+        self._row("fs_wn", grid, 3, "fs_wn", ["fsync.controller.params.wn"], 0.1, 300.0, p2.get("wn", 20.0), 1.0,
+                  decimals=2, suffix="rad/s", log=True, tip_key="fs_wn_tip")
+        self._row("fs_zeta", grid, 4, "fs_zeta", ["fsync.controller.params.zeta"], 0.1, 5.0, p2.get("zeta", 1.0), 0.05,
+                  decimals=2, tip_key="fs_zeta_tip")
+        self.fs_policy = QtWidgets.QComboBox()
+        for key in ("substep", "cap", "off"):
+            self.fs_policy.addItem(T("fs_pol_" + key), key)
+        self.fs_policy.setCurrentIndex(max(0, self.fs_policy.findData(c.fsync.pll.step_policy)))
+        self.fs_policy.setToolTip(T("fs_pol_tip"))
+        self.fs_policy.currentIndexChanged.connect(lambda *_: self._on_param_changed(None, 0.0, "fsync.pll.step_policy"))
+        grid.addWidget(QtWidgets.QLabel(T("fs_pol")), 5, 0)
+        grid.addWidget(self.fs_policy, 5, 1, 1, 2)
+        self.fs_info = QtWidgets.QLabel("")
+        self.fs_info.setWordWrap(True)
+        self.fs_info.setStyleSheet("color: gray")
+        grid.addWidget(self.fs_info, 6, 0, 1, 3)
+        lay.addWidget(g)
         lay.addStretch(1)
 
         # ================= right: toolbar, plots, table =================================
@@ -479,6 +519,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.chk_pi = QtWidgets.QCheckBox(T("show_pi"))
         self.chk_pi.toggled.connect(self._on_pi_toggled)
         tb_show.addWidget(self.chk_pi)
+        self.chk_fs = QtWidgets.QCheckBox(T("show_fs"))
+        self.chk_fs.setToolTip(T("show_fs_tip"))
+        self.chk_fs.toggled.connect(self._on_fs_toggled)
+        tb_show.addWidget(self.chk_fs)
         self.chk_trans = QtWidgets.QCheckBox(T("show_trans"))
         self.chk_trans.setChecked(True)
         self.chk_trans.toggled.connect(lambda *_: self._update_transient_lines())
@@ -514,13 +558,15 @@ class MainWindow(QtWidgets.QMainWindow):
         pl.addLayout(tb_show)
 
         pg.setConfigOptions(antialias=False, background="w", foreground="k")
-        self.pw_delay, self.pw_off, self.pw_diag, self.pw_pi = (pg.PlotWidget(viewBox=ZoomViewBox()) for _ in range(4))
-        self.p_delay, self.p_off, self.p_diag, self.p_pi = (w.getPlotItem() for w in (self.pw_delay, self.pw_off,
-                                                                                      self.pw_diag, self.pw_pi))
+        self.pw_delay, self.pw_off, self.pw_diag, self.pw_pi, self.pw_fs = (pg.PlotWidget(viewBox=ZoomViewBox())
+                                                                            for _ in range(5))
+        self.p_delay, self.p_off, self.p_diag, self.p_pi, self.p_fs = (
+            w.getPlotItem() for w in (self.pw_delay, self.pw_off, self.pw_diag, self.pw_pi, self.pw_fs))
         self.p_off.setXLink(self.p_delay)
         self.p_diag.setXLink(self.p_delay)
         self.p_pi.setXLink(self.p_delay)
-        for p in (self.p_delay, self.p_off, self.p_diag, self.p_pi):
+        self.p_fs.setXLink(self.p_delay)
+        for p in (self.p_delay, self.p_off, self.p_diag, self.p_pi, self.p_fs):
             p.showGrid(x=True, y=True, alpha=0.3)
             p.setMenuEnabled(True)
             p.getAxis("left").setWidth(78)                # aligned plot areas
@@ -535,6 +581,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.p_off.setLabel("bottom", T("ax_time"))
         self.p_diag.setLabel("bottom", T("ax_time"))
         self.p_diag.setLabel("left", "ppb")
+        self.p_fs.setTitle(T("pl_fs"))
+        self.p_fs.setLabel("bottom", T("ax_time"))
         self.p_pi.setTitle(T("pl_pi"))
         self.p_pi.setLabel("bottom", T("ax_time"))
         self.p_pi.setLabel("left", T("ax_pi"))
@@ -551,6 +599,13 @@ class MainWindow(QtWidgets.QMainWindow):
             "base_est": self.p_off.plot(pen=pen(C_BASE, 1.0, QtCore.Qt.DotLine), name=T("lg_base_est")),
             "rate_cmd": self.p_diag.plot(pen=pen(C_EST, 1.5), name=T("lg_cmd")),
             "rate_eff": self.p_diag.plot(pen=pen(C_TRUE, 1.5), name=T("lg_eff")),
+            "fs_rate": self.p_diag.plot(pen=pen(C_FS, 1.5), name=T("lg_fs_rate")),
+            # FSYNC: true phase against the GM grid and against the PHC grid (both wrapped to one period), and the
+            # offset the second servo sees (cascade)
+            "fs_gm": self.p_fs.plot(pen=pen(C_FS, 2.0), name=T("lg_fs_gm")),
+            "fs_phc": self.p_fs.plot(pen=pen(C_TRUE, 1.5, QtCore.Qt.DashLine), name=T("lg_fs_phc")),
+            "fs_obs": self.p_fs.plot(pen=None, symbol="o", symbolSize=3, symbolBrush=C_EST, symbolPen=None,
+                                     name=T("lg_fs_obs")),
             # PI terms: colour AND line style/width tell the curves apart
             "pi_p": self.p_pi.plot(pen=pen(C_EST, 1.5, QtCore.Qt.DashLine), name=T("lg_p")),
             "pi_i": self.p_pi.plot(pen=pen(C_TRUE, 2.0), name=T("lg_i")),
@@ -560,14 +615,14 @@ class MainWindow(QtWidgets.QMainWindow):
         # the thin output (= P + I for the PI laws) goes behind I and P, otherwise it hides them
         for z, k in enumerate(("pi_out", "pi_applied", "pi_i", "pi_p")):
             self.cv[k].setZValue(z)
-        for k in ("true", "base_true"):
+        for k in ("true", "base_true", "fs_gm", "fs_phc", "fs_obs"):
             self.cv[k].setDownsampling(auto=True, method="peak")
             self.cv[k].setClipToView(True)
         plots = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         # each plot sits in a box with its own "zoom y" checkbox in a strip on its right (the strips have the same
         # width, so the plot areas stay aligned); diag / PI hide their whole box
         self.chk_zoom_y, self.plot_boxes = {}, {}
-        for key, pw in (("delay", self.pw_delay), ("off", self.pw_off), ("diag", self.pw_diag), ("pi", self.pw_pi)):
+        for key, pw in self._plot_widgets():
             box = QtWidgets.QWidget()
             hl = QtWidgets.QHBoxLayout(box)
             hl.setContentsMargins(0, 0, 0, 0)
@@ -585,7 +640,7 @@ class MainWindow(QtWidgets.QMainWindow):
             box.setVisible(key in ("delay", "off"))
             plots.addWidget(box)
             self.chk_zoom_y[key], self.plot_boxes[key] = c, box
-        plots.setSizes([300, 420, 180, 240])
+        plots.setSizes([300, 420, 180, 240, 240])
         plots.setChildrenCollapsible(False)
         self.plots_split = plots
 
@@ -693,7 +748,9 @@ class MainWindow(QtWidgets.QMainWindow):
             return                                           # hidden: the next open_scope() pushes the current result
         res = self.main_res if self.mode == "explore" else None
         if res is not None and "scope_bp" in res:
-            self.scope_win.set_data(res["scope_bp"], res["t_end"])
+            if "fsync_hz" in res:
+                self.scope_win.set_frequency(res["fsync_hz"])
+            self.scope_win.set_data(res["scope_bp"], res["t_end"], res.get("fsync_bp"))
         else:
             self.scope_win.set_data(None)
 
@@ -813,6 +870,9 @@ class MainWindow(QtWidgets.QMainWindow):
         ov["intervals.delay_rearm_from_handling"] = self.chk_rearm.isChecked()
         ov["firmware.delay_rate_comp"] = self.chk_dcomp.isChecked()
         ov["actuator.kind"] = "ideal" if self.act_combo.currentIndex() == 0 else "nxp"
+        ov["fsync.mode"] = self.fs_mode.currentData()
+        ov["fsync.phase_detector"] = self.fs_det.currentData()
+        ov["fsync.pll.step_policy"] = self.fs_policy.currentData()
         if "root" in self._dirty:
             ov["actuator.clock_hz"] = int(self.root_combo.currentData())
         ov["controller.name"] = self.ctrl_combo.currentText()
@@ -862,13 +922,19 @@ class MainWindow(QtWidgets.QMainWindow):
                 "lat_fup": c.latency.follow_up_ns, "lat_dresp": c.latency.delay_resp_ns, "lat_cmd": c.latency.command_ns,
                 "lat_step": c.latency.step_ns,
                 "ts_noise": c.timestamps.gm_noise_sigma_ns, "gm_q": c.timestamps.gm_quantum_ns, "loss": c.loss.sync,
-                "fw_clamp": c.firmware.cmd_clamp_ppm, "fw_step": c.firmware.step_threshold_ns}
+                "fw_clamp": c.firmware.cmd_clamp_ppm, "fw_step": c.firmware.step_threshold_ns,
+                "fs_dec": c.fsync.decimation, "fs_wn": c.fsync.controller.params.get("wn", 20.0),
+                "fs_zeta": c.fsync.controller.params.get("zeta", 1.0)}
         for k, v in vals.items():
             self.rows[k].set_config_value(v)
         for w, fn in ((self.delay_mode, lambda: self.delay_mode.setCurrentIndex(0 if c.intervals.delay_mode == "interval" else 1)),
                       (self.act_combo, lambda: self.act_combo.setCurrentIndex(0 if c.actuator.kind == "ideal" else 1)),
                       (self.chk_rearm, lambda: self.chk_rearm.setChecked(c.intervals.delay_rearm_from_handling)),
-                      (self.chk_dcomp, lambda: self.chk_dcomp.setChecked(c.firmware.delay_rate_comp))):
+                      (self.chk_dcomp, lambda: self.chk_dcomp.setChecked(c.firmware.delay_rate_comp)),
+                      (self.fs_mode, lambda: self.fs_mode.setCurrentIndex(max(0, self.fs_mode.findData(c.fsync.mode)))),
+                      (self.fs_det, lambda: self.fs_det.setCurrentIndex(max(0, self.fs_det.findData(c.fsync.phase_detector)))),
+                      (self.fs_policy, lambda: self.fs_policy.setCurrentIndex(
+                          max(0, self.fs_policy.findData(c.fsync.pll.step_policy))))):
             w.blockSignals(True)
             fn()
             w.blockSignals(False)
@@ -914,7 +980,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.rows["delay_log"].set_enabled(not every_n)
         self.rows["delay_n"].set_enabled(every_n)
         self.chk_rearm.setEnabled(not every_n)
-        self.root_combo.setEnabled(self.act_combo.currentIndex() == 1)
+        shared = self.fs_mode.currentData() == "shared"
+        cascade = self.fs_mode.currentData() == "cascade"
+        self.act_combo.setEnabled(not shared)               # B: the PLL is the actuator, the timer runs from it
+        self.root_combo.setEnabled(self.act_combo.currentIndex() == 1 and not shared)
+        for k in ("fs_dec", "fs_wn", "fs_zeta"):
+            self.rows[k].set_enabled(cascade)
+        self.fs_det.setEnabled(cascade)
+        self.fs_policy.setEnabled(shared or cascade)
+        self.fs_info.setText(self._fs_text())
         live = self.mode == "live"
         for k in ("offset0", "freq0", "seed", "duration"):
             self.rows[k].set_enabled(not live or self.live_state == "stopped")
@@ -1004,9 +1078,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self._on_zoom_changed()
         return row
 
+    def _plot_widgets(self):
+        return (("delay", self.pw_delay), ("off", self.pw_off), ("diag", self.pw_diag), ("pi", self.pw_pi),
+                ("fs", self.pw_fs))
+
+    def _all_plots(self):
+        return (self.p_delay, self.p_off, self.p_diag, self.p_pi, self.p_fs)
+
     def _on_zoom_changed(self, *_):
         zx = self.chk_zoom_x.isChecked()
-        for key, pw in (("delay", self.pw_delay), ("off", self.pw_off), ("diag", self.pw_diag), ("pi", self.pw_pi)):
+        for key, pw in self._plot_widgets():
             pw.getViewBox().zoom_enabled = [zx, self.chk_zoom_y[key].isChecked()]
 
     def _on_diag_toggled(self, on):
@@ -1021,12 +1102,19 @@ class MainWindow(QtWidgets.QMainWindow):
             self._share_plot_height()
         self._redraw()
 
+    def _on_fs_toggled(self, on):
+        self.plot_boxes["fs"].setVisible(on)
+        if on:
+            self._share_plot_height()
+        self._redraw()
+
     def _share_plot_height(self):
         """Split the plot column among the plots that are switched on (the splitter handles still resize them).
 
         Without this a plot shown after another one gets only the splitter's minimum height."""
         total = sum(self.plots_split.sizes())
-        weights = [2, 3, 2 if self.chk_diag.isChecked() else 0, 3 if self.chk_pi.isChecked() else 0]
+        weights = [2, 3, 2 if self.chk_diag.isChecked() else 0, 3 if self.chk_pi.isChecked() else 0,
+                   3 if self.chk_fs.isChecked() else 0]
         self.plots_split.setSizes([int(total * w / sum(weights)) for w in weights])
 
     def _on_mode_toggled(self, explore_on: bool):
@@ -1089,9 +1177,25 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def glw_repaint(self):
         """Paint now, so the measured latency includes the rendering."""
-        for w in (self.pw_delay, self.pw_off, self.pw_diag, self.pw_pi):
+        for _k, w in self._plot_widgets():
             if w.isVisible():
                 w.viewport().repaint()
+
+    def _fs_text(self) -> str:
+        """Audio PLL setting and the meaning of the selected FSYNC architecture."""
+        mode = self.fs_mode.currentData()
+        if mode == "off":
+            return T("fs_info_off")
+        from ..pll import AudioPll
+        pc = self.base_cfg.fsync.pll
+        try:
+            pll = AudioPll(pc.fref_hz, pc.vco_hz, pc.den, pc.step_limit_hz)
+        except ValueError as e:
+            return str(e)
+        lo, hi = pll.range_ppm
+        txt = T("fs_info_pll", vco=pc.vco_hz / 1e6, div=pll.div_select, num=pll.num0, den=pll.den,
+                lsb=pll.lsb_ppb, lo=lo, hi=hi, f=pc.vco_hz / pc.fsync_div / 1e3, step=pll.max_step_num / pll.n0 * 1e6)
+        return txt + "\n" + T("fs_info_" + mode, t=pc.vco_hz / pc.timer_div / 1e6)
 
     @staticmethod
     def _act_text(a):
@@ -1099,6 +1203,8 @@ class MainWindow(QtWidgets.QMainWindow):
             return ""
         if a["kind"] == "ideal":
             return T("act_info_ideal", r=a["ratio"])
+        if a["kind"] == "audio_pll":
+            return T("act_info_pll", num=a["num"], f=a["clock_hz"] / 1e6, res=a["timer_delta_ppb"], r=a["ratio"])
         return T("act_info_nxp", inc=a["inc"], ic=a["inc_corr"], cor=a["cor"], r=a["ratio"])
 
     # ------------------------------------------------------------------ live
@@ -1237,6 +1343,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.chk_diag.isChecked():
             self.cv["rate_cmd"].setData(*step_xy(r["rate_t"], r["rate_cmd"], r["t_end"]))
             self.cv["rate_eff"].setData(*step_xy(r["rate_t"], r["rate_eff"], r["t_end"]))
+            if "fs_rate_t" in r:
+                self.cv["fs_rate"].setData(*step_xy(r["fs_rate_t"], r["fs_rate"], r["t_end"]))
+            else:
+                self.cv["fs_rate"].setData([], [])
+        self._draw_fsync(r, s, u)
         self._draw_pi_terms(r)
         for p, ln in self.evt_lines:
             p.removeItem(ln)
@@ -1255,6 +1366,21 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.p_off.addItem(ln)
                 self.evt_lines.append((self.p_off, ln))
         self._update_transient_lines()
+
+    def _draw_fsync(self, r, s, u):
+        """FSYNC plot: true phase vs the GM grid and vs the PHC grid (wrapped to one period) and, in the cascade, the
+        offset seen by the second servo (decimated for drawing).  Empty when the run has no FSYNC model."""
+        self.p_fs.setLabel("left", T("ax_fs", u=u))
+        if not self.chk_fs.isChecked() or "fs_t" not in r:
+            for k in ("fs_gm", "fs_phc", "fs_obs"):
+                self.cv[k].setData([], [])
+            return
+        self.cv["fs_gm"].setData(r["fs_t"], r["fs_gm"] * s)
+        self.cv["fs_phc"].setData(r["fs_t"], r["fs_phc"] * s)
+        if "fs_obs_t" in r and self.chk_est.isChecked():
+            self.cv["fs_obs"].setData(r["fs_obs_t"], r["fs_obs"] * s)
+        else:
+            self.cv["fs_obs"].setData([], [])
 
     def _remove_limit_lines(self):
         for ln in self.lim_lines:
@@ -1302,7 +1428,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.chk_overlay.isChecked():
             items.append((self.base_metrics, C_BASE, "tr_line_base", 0.2))
         plots = [self.p_delay, self.p_off] + ([self.p_diag] if self.chk_diag.isChecked() else []) \
-            + ([self.p_pi] if self.chk_pi.isChecked() else [])
+            + ([self.p_pi] if self.chk_pi.isChecked() else []) + ([self.p_fs] if self.chk_fs.isChecked() else [])
         for mm, col, key, pos in items:
             ts = None if mm is None else mm["true_offset"]["settling_s"]
             if ts is None:
@@ -1318,14 +1444,14 @@ class MainWindow(QtWidgets.QMainWindow):
         if r is None:
             return
         if self.mode == "live":
-            for p in (self.p_delay, self.p_off, self.p_diag, self.p_pi):
+            for p in self._all_plots():
                 p.enableAutoRange(axis="x")
         else:
             self.view_combo.blockSignals(True)
             self.view_combo.setCurrentIndex(0)
             self.view_combo.blockSignals(False)
             self.p_delay.setXRange(0, max(1e-3, r["t_end"]), padding=0.01)
-        for p in (self.p_off, self.p_delay, self.p_diag, self.p_pi):
+        for p in self._all_plots():
             p.enableAutoRange(axis="y")
 
     def _apply_view(self):
@@ -1348,7 +1474,7 @@ class MainWindow(QtWidgets.QMainWindow):
             lo = ts if ts is not None else (ss if ss is not None else 0.0)
             hi = t_end
         self.p_delay.setXRange(lo, max(hi, lo + 1e-3), padding=0.01)
-        for p in (self.p_off, self.p_delay, self.p_diag, self.p_pi):
+        for p in self._all_plots():
             p.enableAutoRange(axis="y")
 
     # ------------------------------------------------------------------ tables
@@ -1416,6 +1542,10 @@ class MainWindow(QtWidgets.QMainWindow):
                  ("m_sat", T("sat_txt", a=s["controller_clamped"], b=s["range_resets"], c=s["resets"], d=s["steps"],
                              e=s["outliers_rejected"])),
                  ("m_time", T("time_txt", a=m["sim_wall_ms"], b=m["metrics_wall_ms"], n=m["n_events"])),
+                 *([("m_fsync", T("fs_txt", a=fm["freq_err_mean_ppb"], b=fm["freq_err_rms_ppb"],
+                                   c=f(fm["phase_vs_phc_rms_ns"]), d=f(fm["phase_vs_phc_max_ns"]), w=fm["window_s"])
+                     + (T("fs_txt_upd", n=fm["updates"]) if "updates" in fm else ""))]
+                   if (fm := m.get("fsync")) else []),
                  ("m_gui", T("gui_txt", a=self.last_ms["gui"] or 0.0, b=self.last_ms["compute"] or 0.0))]
         self.table.clearSpans()
         self.table.setRowCount(len(keys) + len(spans))

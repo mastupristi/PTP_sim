@@ -586,3 +586,39 @@ def test_scope_frequency_selector_keeps_the_position_in_time():
     assert sc2.freq_hz == 48_000 and sc2.pos == 480_000.0
     sc.force_close()
     sc2.force_close()
+
+
+def test_fsync_controls_build_the_config_and_the_plot_draws_a_cascade_result(win):
+    from ptpsim.engine import simulate
+    from ptpsim.live import pack_result
+    base = SimConfig.load(Path(__file__).parent.parent / "configs" / "default_deterministic.json")
+    win._apply_cfg_to_widgets(base)
+    assert win.build_config().fsync.mode == "off" and not win.rows["fs_dec"].spin.isEnabled()
+    win.fs_mode.setCurrentIndex(win.fs_mode.findData("cascade"))
+    assert win.rows["fs_dec"].spin.isEnabled() and win.fs_det.isEnabled() and win.act_combo.isEnabled()
+    win.rows["fs_dec"].spin.setValue(480)
+    win.rows["fs_wn"].spin.setValue(30.0)
+    win.fs_det.setCurrentIndex(win.fs_det.findData("unwrapped"))
+    c = win.build_config()
+    assert (c.fsync.mode, c.fsync.decimation, c.fsync.phase_detector) == ("cascade", 480, "unwrapped")
+    assert c.fsync.controller.params["wn"] == 30.0 and "VCO 786.432 MHz" in win.fs_info.text()
+    win.fs_mode.setCurrentIndex(win.fs_mode.findData("shared"))
+    assert not win.act_combo.isEnabled() and not win.rows["fs_dec"].spin.isEnabled()      # B: the PLL is the actuator
+    assert win.build_config().fsync.mode == "shared"
+    # a cascade result: FSYNC plot, rate curve and the metrics row
+    cfg = base.with_overrides(**{"duration_s": 20.0, "fsync.mode": "cascade"})
+    res = simulate(cfg)
+    from ptpsim.metrics import compute_metrics
+    win.main_res = pack_result(res)
+    win.metrics = compute_metrics(res)
+    win.chk_diag.setChecked(True)
+    win.chk_fs.setChecked(True)
+    assert win.plot_boxes["fs"].isVisibleTo(win)
+    assert win.cv["fs_gm"].xData.size == win.main_res["fs_t"].size > 0          # full data (drawing is clipped)
+    assert win.cv["fs_obs"].xData.size > 0 and win.cv["fs_rate"].xData.size > 0
+    win._fill_table()
+    labels = [win.table.item(i, 0).text() for i in range(win.table.rowCount())]
+    assert "FSYNC (final window)" in labels
+    win.chk_fs.setChecked(False)
+    win.chk_diag.setChecked(False)
+    win.fs_mode.setCurrentIndex(win.fs_mode.findData("off"))

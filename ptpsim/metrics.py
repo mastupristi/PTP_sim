@@ -132,6 +132,35 @@ def _series_metrics(t: np.ndarray, x: np.ndarray, x0: float, t_end: float, mc: M
     return out
 
 
+def fsync_metrics(res: SimResult, mc: MetricsConfig) -> dict | None:
+    """FSYNC over the final window (``final_window_s``): its frequency error against the GM -- mean (phase walked off
+    divided by the window) and RMS (time-weighted over the rate segments) -- and its phase against the PHC grid (true,
+    wrapped to one period).  ``None`` when the run has no FSYNC model."""
+    if res.fsync_clock is None:
+        return None
+    p = res.cfg.fsync.pll
+    per = 1e9 * p.fsync_div / p.vco_hz
+    t1 = int(round(res.t_end_s * PS_PER_S))
+    t0 = max(0, t1 - int(round(mc.final_window_s * PS_PER_S)))
+    fc = res.fsync_clock
+    w_s = (t1 - t0) / PS_PER_S
+    mean_ppb = (fc.phi_hist_ns(t1) - fc.phi_hist_ns(t0)) / w_s if w_s > 0 else float("nan")
+    st, _, sl = fc.breakpoints()
+    ends = np.append(st[1:], t1)
+    lo, hi = np.maximum(st, t0), np.minimum(ends, t1)
+    dur = np.clip(hi - lo, 0, None).astype(np.float64)
+    rms_ppb = float(np.sqrt(np.sum(dur * (sl * 1e9) ** 2) / dur.sum())) if dur.sum() > 0 else float("nan")
+    tg = np.arange(t0, t1, max(1, (t1 - t0) // 20_000), dtype=np.int64)
+    d = fc.sample_ns(tg) - res.clock.sample_ns(tg)
+    d = (d + per / 2) % per - per / 2
+    out = {"mode": res.cfg.fsync.mode, "freq_err_mean_ppb": float(mean_ppb), "freq_err_rms_ppb": rms_ppb,
+           "phase_vs_phc_rms_ns": float(np.sqrt(np.mean(d ** 2))) if d.size else float("nan"),
+           "phase_vs_phc_max_ns": float(np.abs(d).max()) if d.size else float("nan"), "window_s": w_s}
+    if res.fsync is not None:
+        out["updates"] = int(res.fsync["n_updates"])
+    return out
+
+
 def compute_metrics(res: SimResult, mc: MetricsConfig | None = None) -> dict:
     mc = mc or MetricsConfig()
     t0 = time.perf_counter()
@@ -181,6 +210,7 @@ def compute_metrics(res: SimResult, mc: MetricsConfig | None = None) -> dict:
         "bias_of_estimate_ns": (est_m["bias_final_ns"] - true_m["bias_final_ns"])
         if est_m.get("bias_final_ns") == est_m.get("bias_final_ns") else None,
         "sim_wall_ms": res.wall_s * 1e3, "n_events": res.n_events,
+        "fsync": fsync_metrics(res, mc),
     }
     metrics["metrics_wall_ms"] = (time.perf_counter() - t0) * 1e3
     return metrics

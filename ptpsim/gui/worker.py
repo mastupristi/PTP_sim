@@ -76,7 +76,8 @@ def worker_main(req_q, res_q, latest) -> None:
                         continue
                     bres = bsim.result()
                     out["base"] = pack_result(bres)
-                    out["base"].pop("scope_bp", None)           # the oscilloscope shows the main run only
+                    for k in [k for k in out["base"] if k == "scope_bp" or k.startswith(("fsync_", "fs_"))]:
+                        out["base"].pop(k)                       # the oscilloscope and FSYNC plots show the main run only
                     out["base_metrics"] = compute_metrics(bres, mc)
                 out["compute_ms"] = (time.perf_counter() - t_start) * 1e3
                 res_q.put(out)
